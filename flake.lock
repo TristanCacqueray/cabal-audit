@@ -1,0 +1,46 @@
+{
+  "nodes": {
+    "hspkgs": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1682817781,
+        "narHash": "sha256-kkyeO+HhuwgiwHd9Kbda2auGS8Z4eiidfVVlaeKYeag=",
+        "owner": "podenv",
+        "repo": "hspkgs",
+        "rev": "fe0dabfd8acf96f1b5cff55766de6284517868cf",
+        "type": "github"
+      },
+      "original": {
+        "owner": "podenv",
+        "repo": "hspkgs",
+        "rev": "fe0dabfd8acf96f1b5cff55766de6284517868cf",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1682195241,
+        "narHash": "sha256-L3dWlKvjdapeq343mxpI+5fo954c2x2cv0p4cipS0Hg=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "22c5bd85d8478e24874ff2b80875506f5c3711a6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "22c5bd85d8478e24874ff2b80875506f5c3711a6",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "hspkgs": "hspkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
