@@ -54,3 +54,10 @@ executable cabal-audit
   main-is:        Main.hs
   ghc-options:    -threaded -rtsopts -with-rtsopts=-T
   build-depends:  cabal-audit
+
+test-suite spec
+  import:         common
+  hs-source-dirs: test
+  main-is:        Spec.hs
+  other-modules:  CabalAudit.Test.Simple
+  type:           exitcode-stdio-1.0

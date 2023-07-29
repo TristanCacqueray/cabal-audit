@@ -3,9 +3,8 @@ module CabalAudit where
 -- base
 import Control.Monad
 import Data.Foldable
-import Data.Maybe
 import Data.List (intersperse)
-import Control.Applicative ((<|>))
+import Data.Maybe
 
 -- containers
 import Data.Map.Strict qualified as Map
@@ -30,9 +29,8 @@ import Algebra.Graph.ToGraph qualified as Graph
 import GHC.Generics (Generic)
 import GHC.Iface.Ext.Types
 import GHC.Types.Name
-import GHC.Utils.Outputable (Outputable (ppr), SDoc, defaultSDocContext, showSDocOneLine)
 import GHC.Unit.Module
-import GHC.Utils.Outputable (hcat)
+import GHC.Utils.Outputable (Outputable (ppr), SDoc, defaultSDocContext, hcat, showSDocOneLine)
 
 -- cabal-audit
 import HieLoader
@@ -52,10 +50,11 @@ data Analysis = Analysis
 main :: IO ()
 main = do
     let hieLocations = ["./dist-newstyle"]
-        exposedModule = mkModuleName <$> ["CabalAudit", "HieLoader"]
-    analysis <- listExternalNames hieLocations exposedModule
+        exposedModule = mkModuleName <$> ["CabalAudit.Test.Simple"]
+    analysis <- doAnalyze hieLocations exposedModule
     printExternalNames analysis
 
+-- | A helper to dump the analysis.
 printExternalNames :: Analysis -> IO ()
 printExternalNames analysis = evalStateT go mempty
   where
@@ -75,38 +74,30 @@ printExternalNames analysis = evalStateT go mempty
                 put $ Set.union known (Set.fromList reachable)
                 lift $ putStr "\n"
 
-listExternalNames :: [FilePath] -> [ModuleName] -> IO Analysis
-listExternalNames hiePaths rootModules = do
+-- | Perform the analysis
+doAnalyze :: [FilePath] -> [ModuleName] -> IO Analysis
+doAnalyze hiePaths rootModules = do
     hieState <- newHieState hiePaths
     let analysis = Analysis mempty mempty
-    execStateT (doListExternalNames hieState rootModules) analysis
-
-doListExternalNames :: HieState -> [ModuleName] -> StateT Analysis IO ()
-doListExternalNames hieState rootModules = do
-    forM_ rootModules \rootModule -> do
-        lift (lookupOrLoadHieFile hieState rootModule) >>= \case
-            Nothing -> lift (putStrLn $ "No hie file for " <> show rootModule)
-            Just hieFile -> do
-                forM_ (getDependencies hieFile) \dependency -> do
-                    case dependency.parent of
-                        Nothing -> error "this is impossible!"
-                        Just decl -> do
-                            #roots %= Set.insert decl
-                            #dependencyGraph %= overlay (edge decl dependency.decl)
+    flip execStateT analysis do
+        forM_ rootModules \rootModule -> do
+            lift (lookupOrLoadHieFile hieState rootModule) >>= \case
+                Nothing -> lift (putStrLn $ "No hie file for " <> show rootModule)
+                Just hieFile -> do
+                    forM_ (getDependencies hieFile) \(lhs, decl) -> do
+                        #roots %= Set.insert lhs
+                        #dependencyGraph %= overlay (edge lhs decl)
 
         -- todo: load external hie file and dive in the dependency tree
         pure ()
 
-data Dependency = Dependency
+data DeclarationInfo = DeclarationInfo
     { decl :: Declaration
     , ctxInfo :: Set ContextInfo
-    , parent :: Maybe Declaration
     }
 
-instance Show Dependency where
-    show extName =
-        showPpr $
-            hcat [ppr extName.parent, " -> ", ppr extName.decl, " ", ppr extName.ctxInfo]
+instance Show DeclarationInfo where
+    show extName = showPpr $ hcat $ [ppr extName.decl, " ", ppr extName.ctxInfo]
 
 showPpr :: SDoc -> String
 showPpr = showSDocOneLine defaultSDocContext
@@ -117,7 +108,8 @@ instance Outputable Declaration where
 instance Show Declaration where
     show decl = showPpr (ppr decl)
 
-isToplevelDeclaration :: Dependency -> Maybe Declaration
+-- | Check if a declaration is a top level bind
+isToplevelDeclaration :: DeclarationInfo -> Maybe Declaration
 isToplevelDeclaration extName =
     Set.foldr
         ( \ctx acc -> case acc of
@@ -132,37 +124,45 @@ isToplevelDeclaration extName =
         ValBind _bindType ModuleScope _span -> Just extName.decl
         _ -> Nothing
 
-isUsage :: Dependency -> Bool
-isUsage extName = isJust extName.parent && Use `Set.member` extName.ctxInfo
+isUsage :: DeclarationInfo -> Bool
+isUsage extName = Use `Set.member` extName.ctxInfo
 
-getDependencies :: HieFile -> [Dependency]
-getDependencies hieFile = filter isUsage $ doGet 0 Nothing (Map.elems hieFile.hie_asts.getAsts)
+getDependencies :: HieFile -> [(Declaration, Declaration)]
+getDependencies hieFile =
+    map (fmap (.decl)) $ filter (isUsage . snd) $ doGet Nothing (Map.elems hieFile.hie_asts.getAsts)
   where
-    doGet :: Int -> Maybe Declaration -> [HieAST TypeIndex] -> [Dependency]
-    doGet _depth _mParent [] = []
-    doGet depth mParent (lhs : rest) = lhsName <> concatMap (doGetName depth newParent) rest
+    doGet :: Maybe Declaration -> [HieAST TypeIndex] -> [(Declaration, DeclarationInfo)]
+    doGet _mLHS [] = []
+    doGet Nothing (cur : rest) = doGet mLHS cur.nodeChildren <> doGet mLHS rest
       where
-        lhsName = doGetName depth mParent lhs
-        lhsParent = listToMaybe $ mapMaybe isToplevelDeclaration lhsName
-        newParent = mParent <|> lhsParent
+        -- Is the current node a left-hand-side binder?
+        mLHS :: Maybe Declaration
+        mLHS = listToMaybe $ mapMaybe isToplevelDeclaration curNodeInfo
+        curNodeInfo =
+            doGetNode cur.sourcedNodeInfo
+                <> concatMap (doGetNode . (.sourcedNodeInfo)) cur.nodeChildren
+    doGet (Just decl) xs = (\di -> (decl, di)) <$> concatMap (doGetName decl) xs
 
-    doGetName :: Int -> Maybe Declaration -> HieAST TypeIndex -> [Dependency]
-    doGetName depth mParent hieAST = doGetNode hieAST.sourcedNodeInfo <> doGet (depth + 1) mParent hieAST.nodeChildren
-      where
-        doGetNode :: SourcedNodeInfo TypeIndex -> [Dependency]
-        doGetNode node = concatMap doGetNodeInfo (Map.elems node.getSourcedNodeInfo)
+    doGetName :: Declaration -> HieAST TypeIndex -> [DeclarationInfo]
+    doGetName lhs hieAST = doGetNode hieAST.sourcedNodeInfo <> fmap snd (doGet (Just lhs) hieAST.nodeChildren)
 
-        doGetNodeInfo :: NodeInfo TypeIndex -> [Dependency]
-        doGetNodeInfo nodeInfo = concatMap doGetNodeIdentifiers (Map.toList nodeInfo.nodeIdentifiers)
+    doGetNode :: SourcedNodeInfo TypeIndex -> [DeclarationInfo]
+    doGetNode node = concatMap doGetNodeInfo (Map.elems node.getSourcedNodeInfo)
 
-        doGetNodeIdentifiers :: (Identifier, IdentifierDetails TypeIndex) -> [Dependency]
-        doGetNodeIdentifiers (identifier, identifierDetails) = case identifier of
-            Left _moduleName -> []
-            Right name -> case nameToDeclaration name of
-                Just decl -> [Dependency decl identifierDetails.identInfo mParent]
-                _ -> []
+    doGetNodeInfo :: NodeInfo TypeIndex -> [DeclarationInfo]
+    doGetNodeInfo nodeInfo = concatMap doGetNodeIdentifiers (Map.toList nodeInfo.nodeIdentifiers)
+
+    doGetNodeIdentifiers :: (Identifier, IdentifierDetails TypeIndex) -> [DeclarationInfo]
+    doGetNodeIdentifiers (identifier, identifierDetails) = case identifierToDeclaration identifier of
+        Just decl -> [DeclarationInfo decl identifierDetails.identInfo]
+        Nothing -> []
+
+identifierToDeclaration :: Identifier -> Maybe Declaration
+identifierToDeclaration = \case
+    Left _moduleName -> Nothing
+    Right name -> nameToDeclaration name
 
 nameToDeclaration :: Name -> Maybe Declaration
 nameToDeclaration name = do
     m <- nameModule_maybe name
-    return Declaration{declModule = m, declOccName = nameOccName name}
+    pure Declaration{declModule = m, declOccName = nameOccName name}
