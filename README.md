@@ -30,5 +30,11 @@ CabalAudit.Test.Simple.maFonction: System.IO.putStr
 
 - [x] List external declaration.
 - [ ] Handle type class instance evidences.
-- [ ] Figure how to get all the hie files (for ghc and hackage libs).
+- [ ] Load every hie files (for ghc and hackage libs).
 - [ ] Discover the list of exposed module.
+
+## References
+
+- Haskell wiki [hie-files](https://gitlab.haskell.org/ghc/ghc-wiki-mirror/-/blob/master/hie-files.md)
+- GHC module [GHC.Iface.Ext.Types](https://hackage.haskell.org/package/ghc-9.6.1/docs/GHC-Iface-Ext-Types.html)
+- Weeder examples [repo](https://github.com/ocharles/weeder/blob/master/src/Weeder.hs)

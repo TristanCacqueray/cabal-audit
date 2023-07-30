@@ -1,6 +1,6 @@
 module CabalAudit.Test.Instance where
 
-import CabalAudit.Test.Typeclass
+import CabalAudit.Test.Class
 
 data Tea = Tea
 

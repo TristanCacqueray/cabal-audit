@@ -23,6 +23,7 @@ common common
 
   default-extensions:
     BlockArguments
+    DerivingStrategies
     ImportQualifiedPost
     LambdaCase
     OverloadedLabels
@@ -62,7 +63,7 @@ test-suite spec
   other-modules:
     CabalAudit.Test.Instance
     CabalAudit.Test.Simple
-    CabalAudit.Test.Typeclass
+    CabalAudit.Test.Class
     CabalAudit.Test.User
 
   type:           exitcode-stdio-1.0

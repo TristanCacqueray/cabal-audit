@@ -2,6 +2,7 @@ module CabalAudit where
 
 -- base
 import Control.Monad
+import Data.Coerce (coerce)
 import Data.Foldable
 import Data.List (intersperse)
 import Data.Maybe
@@ -35,15 +36,20 @@ import GHC.Utils.Outputable hiding ((<>))
 -- cabal-audit
 import HieLoader
 
+-- | A symbol that is imported
 data Declaration = Declaration
     { declModule :: Module
     , declOccName :: OccName
     }
     deriving (Ord, Eq)
 
+-- | A symbol that is defined
+newtype TopLevelDeclaration = TopLevelDeclaration Declaration
+    deriving newtype (Ord, Eq, Show)
+
 data Analysis = Analysis
     { dependencyGraph :: Graph Declaration
-    , roots :: Set Declaration
+    , roots :: Set TopLevelDeclaration
     }
     deriving (Generic)
 
@@ -61,17 +67,17 @@ printExternalNames analysis = evalStateT go mempty
     go :: StateT (Set Declaration) IO ()
     go = traverse_ goRoot analysis.roots
 
-    goRoot :: Declaration -> StateT (Set Declaration) IO ()
+    goRoot :: TopLevelDeclaration -> StateT (Set Declaration) IO ()
     goRoot decl = do
-        let reachable :: [Declaration]
-            reachable = Graph.reachable decl analysis.dependencyGraph
+        let reachables :: [Declaration]
+            reachables = Graph.reachable (coerce decl) analysis.dependencyGraph
         known <- get
-        case filter (`notElem` known) (filter (/= decl) reachable) of
+        case filter (`notElem` known) (filter (/= coerce decl) reachables) of
             [] -> pure ()
-            xs -> do
+            decls -> do
                 lift $ putStr (show decl <> ": ")
-                traverse_ (lift . putStr) (intersperse ", " (show <$> xs))
-                put $ Set.union known (Set.fromList reachable)
+                traverse_ (lift . putStr) (intersperse ", " (show <$> decls))
+                put $ Set.union known (Set.fromList decls)
                 lift $ putStr "\n"
 
 -- | Perform the analysis
@@ -84,9 +90,9 @@ doAnalyze hiePaths rootModules = do
             lift (lookupOrLoadHieFile hieState rootModule) >>= \case
                 Nothing -> lift (putStrLn $ "No hie file for " <> show rootModule)
                 Just hieFile -> do
-                    forM_ (getDependencies hieFile) \(lhs, decl) -> do
-                        #roots %= Set.insert lhs
-                        #dependencyGraph %= overlay (edge lhs decl)
+                    forM_ (getDependencies hieFile) \(topLevelDecl, decl) -> do
+                        #roots %= Set.insert (coerce topLevelDecl)
+                        #dependencyGraph %= overlay (edge (coerce topLevelDecl) decl)
 
         -- todo: load external hie file and dive in the dependency tree
         pure ()
@@ -109,7 +115,7 @@ instance Show Declaration where
     show decl = showPpr (ppr decl)
 
 -- | Check if a declaration is a top level bind
-isToplevelDeclaration :: DeclarationInfo -> Maybe Declaration
+isToplevelDeclaration :: DeclarationInfo -> Maybe TopLevelDeclaration
 isToplevelDeclaration extName =
     Set.foldr
         ( \ctx acc -> case acc of
@@ -119,31 +125,30 @@ isToplevelDeclaration extName =
         Nothing
         extName.ctxInfo
   where
-    isTopDecl :: ContextInfo -> Maybe Declaration
+    isTopDecl :: ContextInfo -> Maybe TopLevelDeclaration
     isTopDecl = \case
-        ValBind _bindType ModuleScope _span -> Just extName.decl
+        ValBind _bindType ModuleScope _span -> Just (TopLevelDeclaration extName.decl)
         _ -> Nothing
 
 isUsage :: DeclarationInfo -> Bool
 isUsage extName = Use `Set.member` extName.ctxInfo
 
-getDependencies :: HieFile -> [(Declaration, Declaration)]
+-- | Returns all the edges between a top level declaration and its dependency.
+getDependencies :: HieFile -> [(TopLevelDeclaration, Declaration)]
 getDependencies hieFile =
     map (fmap (.decl)) $ filter (isUsage . snd) $ doGet Nothing (Map.elems hieFile.hie_asts.getAsts)
   where
-    doGet :: Maybe Declaration -> [HieAST TypeIndex] -> [(Declaration, DeclarationInfo)]
+    doGet :: Maybe TopLevelDeclaration -> [HieAST TypeIndex] -> [(TopLevelDeclaration, DeclarationInfo)]
     doGet _mLHS [] = []
     doGet Nothing (cur : rest) = doGet mLHS cur.nodeChildren <> doGet mLHS rest
       where
         -- Is the current node a left-hand-side binder?
-        mLHS :: Maybe Declaration
+        mLHS :: Maybe TopLevelDeclaration
         mLHS = listToMaybe $ mapMaybe isToplevelDeclaration curNodeInfo
-        curNodeInfo =
-            doGetNode cur.sourcedNodeInfo
-                <> concatMap (doGetNode . (.sourcedNodeInfo)) cur.nodeChildren
+        curNodeInfo = concatMap (doGetNode . (.sourcedNodeInfo)) (cur : cur.nodeChildren)
     doGet (Just decl) xs = (\di -> (decl, di)) <$> concatMap (doGetName decl) xs
 
-    doGetName :: Declaration -> HieAST TypeIndex -> [DeclarationInfo]
+    doGetName :: TopLevelDeclaration -> HieAST TypeIndex -> [DeclarationInfo]
     doGetName lhs hieAST = doGetNode hieAST.sourcedNodeInfo <> fmap snd (doGet (Just lhs) hieAST.nodeChildren)
 
     doGetNode :: SourcedNodeInfo TypeIndex -> [DeclarationInfo]
