@@ -73,11 +73,12 @@ printExternalNames analysis = evalStateT go mempty
             reachables = Graph.reachable (coerce decl) analysis.dependencyGraph
         known <- get
         case filter (`notElem` known) (filter (/= coerce decl) reachables) of
-            [] -> pure ()
+            [] -> lift $ putStrLn (show decl <> " does not have any dependencies")
             decls -> do
                 lift $ putStr (show decl <> ": ")
                 traverse_ (lift . putStr) (intersperse ", " (show <$> decls))
-                put $ Set.union known (Set.fromList decls)
+                -- Reduce the output by registering the declarations that have been reported
+                -- put $ Set.union known (Set.fromList decls)
                 lift $ putStr "\n"
 
 -- | Perform the analysis
@@ -128,6 +129,7 @@ isToplevelDeclaration extName =
     isTopDecl :: ContextInfo -> Maybe TopLevelDeclaration
     isTopDecl = \case
         ValBind _bindType ModuleScope _span -> Just (TopLevelDeclaration extName.decl)
+        MatchBind -> Just (TopLevelDeclaration extName.decl)
         _ -> Nothing
 
 isUsage :: DeclarationInfo -> Bool
@@ -136,20 +138,25 @@ isUsage extName = Use `Set.member` extName.ctxInfo
 -- | Returns all the edges between a top level declaration and its dependency.
 getDependencies :: HieFile -> [(TopLevelDeclaration, Declaration)]
 getDependencies hieFile =
-    map (fmap (.decl)) $ filter (isUsage . snd) $ doGet Nothing (Map.elems hieFile.hie_asts.getAsts)
+    map (fmap (.decl)) $ filter (isUsage . snd) $ concatMap doGet (Map.elems hieFile.hie_asts.getAsts)
   where
-    doGet :: Maybe TopLevelDeclaration -> [HieAST TypeIndex] -> [(TopLevelDeclaration, DeclarationInfo)]
-    doGet _mLHS [] = []
-    doGet Nothing (cur : rest) = doGet mLHS cur.nodeChildren <> doGet mLHS rest
+    doGet :: HieAST TypeIndex -> [(TopLevelDeclaration, DeclarationInfo)]
+    doGet cur = case isTopLevel of
+        Nothing -> concatMap doGet cur.nodeChildren
+        Just decl -> (\di -> (decl, di)) <$> doGetDependencies cur
       where
         -- Is the current node a left-hand-side binder?
-        mLHS :: Maybe TopLevelDeclaration
-        mLHS = listToMaybe $ mapMaybe isToplevelDeclaration curNodeInfo
-        curNodeInfo = concatMap (doGetNode . (.sourcedNodeInfo)) (cur : cur.nodeChildren)
-    doGet (Just decl) xs = (\di -> (decl, di)) <$> concatMap (doGetName decl) xs
+        isTopLevel :: Maybe TopLevelDeclaration
+        isTopLevel = listToMaybe $ mapMaybe isToplevelDeclaration curNodeInfo
+        curNodeInfo =
+            -- Note: this is a bit suspicious. It seems like top level declaration are defined like this:
+            -- node.children = lhsDeclaration : rhsDeclarations...
+            case cur.nodeChildren of
+                (lhs : _) -> doGetNode lhs.sourcedNodeInfo
+                _ -> []
 
-    doGetName :: TopLevelDeclaration -> HieAST TypeIndex -> [DeclarationInfo]
-    doGetName lhs hieAST = doGetNode hieAST.sourcedNodeInfo <> fmap snd (doGet (Just lhs) hieAST.nodeChildren)
+    doGetDependencies :: HieAST TypeIndex -> [DeclarationInfo]
+    doGetDependencies cur = doGetNode cur.sourcedNodeInfo <> concatMap doGetDependencies cur.nodeChildren
 
     doGetNode :: SourcedNodeInfo TypeIndex -> [DeclarationInfo]
     doGetNode node = concatMap doGetNodeInfo (Map.elems node.getSourcedNodeInfo)
