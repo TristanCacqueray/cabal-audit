@@ -59,5 +59,10 @@ test-suite spec
   import:         common
   hs-source-dirs: test
   main-is:        Spec.hs
-  other-modules:  CabalAudit.Test.Simple
+  other-modules:
+    CabalAudit.Test.Instance
+    CabalAudit.Test.Simple
+    CabalAudit.Test.Typeclass
+    CabalAudit.Test.User
+
   type:           exitcode-stdio-1.0

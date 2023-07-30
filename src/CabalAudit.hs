@@ -30,7 +30,7 @@ import GHC.Generics (Generic)
 import GHC.Iface.Ext.Types
 import GHC.Types.Name
 import GHC.Unit.Module
-import GHC.Utils.Outputable (Outputable (ppr), SDoc, defaultSDocContext, hcat, showSDocOneLine)
+import GHC.Utils.Outputable hiding ((<>))
 
 -- cabal-audit
 import HieLoader
@@ -50,7 +50,7 @@ data Analysis = Analysis
 main :: IO ()
 main = do
     let hieLocations = ["./dist-newstyle"]
-        exposedModule = mkModuleName <$> ["CabalAudit.Test.Simple"]
+        exposedModule = mkModuleName <$> ["CabalAudit.Test.Simple", "CabalAudit.Test.User", "CabalAudit.Test.Instance"]
     analysis <- doAnalyze hieLocations exposedModule
     printExternalNames analysis
 
