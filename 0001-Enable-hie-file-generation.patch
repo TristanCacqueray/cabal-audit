@@ -1,0 +1,24 @@
+From da42e983278cf4bfeee26450912fa3c97b8e69c1 Mon Sep 17 00:00:00 2001
+From: Tristan Cacqueray <tdecacqu@redhat.com>
+Date: Tue, 1 Aug 2023 03:00:00 +0000
+Subject: [PATCH] Enable hie file generation
+
+---
+ hadrian/src/Settings/Builders/Ghc.hs | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/hadrian/src/Settings/Builders/Ghc.hs b/hadrian/src/Settings/Builders/Ghc.hs
+index 2e5a15ce..6a64caea 100644
+--- a/hadrian/src/Settings/Builders/Ghc.hs
++++ b/hadrian/src/Settings/Builders/Ghc.hs
+@@ -62,6 +62,7 @@ compileAndLinkHs = (builder (Ghc CompileHs) ||^ builder (Ghc LinkHs)) ? do
+             , ghcLinkArgs
+             , defaultGhcWarningsArgs
+             , builder (Ghc CompileHs) ? arg "-c"
++            , notStage0 ? builder (Ghc CompileHs) ? arg "-fwrite-ide-info"
+             , getInputs
+             , arg "-o", arg =<< getOutput ]
+ 
+-- 
+2.38.1
+
