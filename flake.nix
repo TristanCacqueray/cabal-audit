@@ -41,7 +41,7 @@
           else
             withHie value) packagesSet;
 
-      haskellExtend = hpFinal: hpPrev:
+      haskellExtendWithHie = hpFinal: hpPrev:
         withAllHie hpPrev // ({
           cabal-audit = hpPrev.callCabal2nix "cabal-audit" self { };
           ghc = hpPrev.ghc.overrideAttrs (prev: {
@@ -50,7 +50,11 @@
           });
         });
 
-      hsPkgs = pkgs.hspkgs.extend haskellExtend;
+      haskellExtendBase = hpFinal: hpPrev: {
+        cabal-audit = hpPrev.callCabal2nix "cabal-audit" self { };
+      };
+
+      hsPkgs = pkgs.hspkgs.extend haskellExtendBase;
 
       baseTools = with pkgs; [
         cabal-install
