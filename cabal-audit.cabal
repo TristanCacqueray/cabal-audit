@@ -37,7 +37,6 @@ library
   hs-source-dirs:  src
   exposed-modules:
     CabalAudit
-    CabalAuditPlugin
     CabalAuditIface
     HieLoader
 
@@ -64,8 +63,8 @@ test-suite spec
   import:         common
   hs-source-dirs: test
   main-is:        Spec.hs
-  build-depends:  cabal-audit
-  ghc-options:    -fplugin CabalAuditPlugin -fwrite-if-simplified-core
+  build-depends:  cabal-audit, cabal-audit-plugin
+  ghc-options:    -fplugin CabalAudit.Plugin -fwrite-if-simplified-core
   other-modules:
     CabalAudit.Test.Instance
     CabalAudit.Test.Simple

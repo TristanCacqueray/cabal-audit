@@ -1,0 +1,43 @@
+cabal-version: 3.0
+name:          cabal-audit-plugin
+version:       0.1
+synopsis:      A GHC plugin to collect declarations dependencies.
+description:
+  Use this plugin to collect declarations dependencies in a `.hi-deps` file.
+
+category:      Development
+author:        Tristan Cacqueray
+maintainer:    tdecacqu@redhat.com
+license:       MIT
+license-file:  LICENSE
+build-type:    Simple
+
+source-repository head
+  type:     git
+  location: https://github.com/TristanCacqueray/cabal-audit
+
+library
+  build-depends:
+    , base        <5
+    , binary
+    , containers
+    , ghc
+
+  default-language:   GHC2021
+  ghc-options:
+    -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures
+    -fwrite-ide-info -Wno-missing-methods
+
+  default-extensions:
+    BlockArguments
+    DerivingStrategies
+    ImportQualifiedPost
+    LambdaCase
+    OverloadedLabels
+    OverloadedRecordDot
+    OverloadedStrings
+    PartialTypeSignatures
+    StrictData
+
+  hs-source-dirs:     src
+  exposed-modules:    CabalAudit.Plugin
