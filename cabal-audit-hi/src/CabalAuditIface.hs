@@ -22,8 +22,8 @@ import Data.Foldable
 import GHC.Unit.Types (stringToUnit)
 import GHC.Utils.Outputable hiding ((<>))
 
-getCoreBind :: ModIface -> Ghc [CoreBind]
-getCoreBind modIface = do
+getCoreBind :: HscEnv -> ModIface -> IO [CoreBind]
+getCoreBind hscEnv modIface = do
     let ifLclEnv :: IfLclEnv
         ifLclEnv =
             IfLclEnv
@@ -40,13 +40,12 @@ getCoreBind modIface = do
     case modIface.mi_extra_decls of
         Nothing -> pure []
         Just decls -> do
-            hscEnv <- getSession
-            typeEnv <- liftIO (newIORef emptyTypeEnv)
-            liftIO do
-                putStrLn $ "Converting " <> show (length decls)
-                runIOEnv (Env hscEnv 'a' ifGblEnv ifLclEnv) do
-                    tcTopIfaceBindings typeEnv decls
+            typeEnv <- newIORef emptyTypeEnv
+            putStrLn $ "Converting " <> show (length decls)
+            runIOEnv (Env hscEnv 'a' ifGblEnv ifLclEnv) do
+                tcTopIfaceBindings typeEnv decls
 
+-- This does not seems to work well, bad unit id?
 loadIface :: ModuleName -> FilePath -> Ghc ModIface
 loadIface moduleName fp = do
     let genModule = mkModule (stringToUnit "main") moduleName
@@ -69,10 +68,12 @@ main = do
         case modInfoIface modInfo of
             Nothing -> liftIO $ putStrLn "No iface?"
             Just modIface -> do
-                liftIO $ putStrLn $ "Got iface: " <> showPpr (ppr modIface.mi_extra_decls)
-                coreBinds <- getCoreBind modIface
-                liftIO $ putStrLn $ "Corebinds " <> show (length coreBinds)
-                liftIO $ traverse_ (putStrLn . showPpr . ppr) coreBinds
+                hscEnv <- getSession
+                liftIO do
+                    putStrLn $ "Got iface: " <> showPpr (ppr modIface.mi_extra_decls)
+                    coreBinds <- getCoreBind hscEnv modIface
+                    putStrLn $ "Corebinds " <> show (length coreBinds)
+                    traverse_ (putStrLn . showPpr . ppr) coreBinds
 
 showPpr :: SDoc -> String
 showPpr = showSDocOneLine defaultSDocContext
