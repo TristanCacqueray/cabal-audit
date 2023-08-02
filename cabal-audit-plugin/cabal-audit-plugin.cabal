@@ -41,3 +41,27 @@ library
 
   hs-source-dirs:     src
   exposed-modules:    CabalAudit.Plugin
+
+foreign-library cabal-audit-plugin
+  type:               native-shared
+  default-language:   GHC2021
+  hs-source-dirs:     src
+  default-extensions:
+    BlockArguments
+    DerivingStrategies
+    ImportQualifiedPost
+    LambdaCase
+    OverloadedLabels
+    OverloadedRecordDot
+    OverloadedStrings
+    PartialTypeSignatures
+    StrictData
+
+  ghc-options:        -this-unit-id cabal-audit-plugin -fno-link-rts
+  build-depends:
+    , base        <5
+    , binary
+    , containers
+    , ghc
+
+  other-modules:      CabalAudit.Plugin

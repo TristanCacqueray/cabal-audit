@@ -9,6 +9,50 @@
     let
       pkgs = hspkgs.pkgs;
 
+      pluginDrv = pkgs.haskell.lib.dontHaddock
+        (pkgs.hspkgs.callCabal2nix "cabal-audit-plugin" ./cabal-audit-plugin
+          { });
+      pluginSoPath = "${pluginDrv}/lib/ghc-9.6.1/lib/libcabal-audit-plugin.so";
+      pluginArgs = [
+        "-fplugin-trustworthy"
+        "-fplugin-library='${pluginSoPath};cabal-audit-plugin;CabalAudit.Plugin;[]'"
+      ];
+
+      # Enable hix output for a ghc package
+      withHix = drv:
+        let
+          ndrv =
+            pkgs.haskell.lib.appendBuildFlags (pkgs.haskell.lib.dontHaddock drv)
+            (map (a: "--ghc-options=${a}") pluginArgs);
+        in ndrv.overrideAttrs (_: prevAttrs: {
+          installPhase = ''
+            ${prevAttrs.installPhase}
+
+            # Put the hix file next to the .hi
+            pkgLibDir="$(find $out -type d -name $pkgId)"
+            if [ -d $pkgLibDir ]; then
+              echo "Copying hix files to $pkgLibDir..."
+              pushd dist/build/
+                for hixfile in $(find . -type f -name "*.hix"); do
+                  mkdir -p "$pkgLibDir/$(dirname $hixfile)";
+                  cp "$hixfile" "$pkgLibDir/$hixfile"
+                done
+              popd
+            else
+              echo "Skipping hix file for non library package"
+            fi
+          '';
+        });
+
+      # Call withHix for all package set attributes
+      withAllHix = packagesSet:
+        builtins.mapAttrs (name: value:
+          if builtins.elem name [ "mkDerivation" "ghc" "cabal-audit-plugin" ]
+          || !(builtins.isAttrs value) || !(builtins.hasAttr "pname" value) then
+            value
+          else
+            withHix value) packagesSet;
+
       # Enable hie output for a ghc package
       withHie = drv:
         let
@@ -51,10 +95,23 @@
         });
 
       haskellExtendBase = hpFinal: hpPrev: {
-        cabal-audit = hpPrev.callCabal2nix "cabal-audit" self { };
+        cabal-audit-command =
+          hpPrev.callCabal2nix "cabal-audit-command" ./cabal-audit-command { };
+        cabal-audit-plugin =
+          hpPrev.callCabal2nix "cabal-audit-plugin" ./cabal-audit-plugin { };
+        cabal-audit-hi =
+          hpPrev.callCabal2nix "cabal-audit-hi" ./cabal-audit-hi { };
+        cabal-audit-hie =
+          hpPrev.callCabal2nix "cabal-audit-hie" ./cabal-audit-hie { };
+        cabal-audit-test =
+          hpPrev.callCabal2nix "cabal-audit-test" ./cabal-audit-test { };
       };
 
       hsPkgs = pkgs.hspkgs.extend haskellExtendBase;
+
+      haskellExtendWithHix = hpFinal: hpPrev:
+        withAllHix (hpPrev // (haskellExtendBase hpFinal hpPrev));
+      hsPkgsTest = pkgs.hspkgs.extend haskellExtendWithHix;
 
       baseTools = with pkgs; [
         cabal-install
@@ -66,11 +123,20 @@
 
     in {
       packages."x86_64-linux".default =
-        pkgs.haskell.lib.justStaticExecutables hsPkgs.cabal-audit;
-      packages."x86_64-linux".test = hsPkgs.ghc-byteorder;
+        pkgs.haskell.lib.justStaticExecutables hsPkgs.cabal-audit-command;
+      packages."x86_64-linux".test = hsPkgsTest.tagged;
+      packages."x86_64-linux".plugin = pluginDrv;
       packages."x86_64-linux".ghc = hsPkgs.ghc;
       devShell."x86_64-linux" = hsPkgs.shellFor {
-        packages = p: [ p.cabal-audit ];
+        packages = p: [
+          p.cabal-audit-plugin
+          p.cabal-audit-command
+          p.cabal-audit-hi
+        ];
+        buildInputs = with pkgs; [ ghcid haskell-language-server ] ++ baseTools;
+      };
+      devShells."x86_64-linux".test = hsPkgsTest.shellFor {
+        packages = p: [ p.cabal-audit-test ];
         buildInputs = with pkgs; [ ghcid haskell-language-server ] ++ baseTools;
       };
     };

@@ -98,7 +98,7 @@ pass guts = do
     let dependencies :: Dependencies
         dependencies = reduceDependencies $ foldMap getDependencies guts.mg_binds
 
-    liftIO $ printDependencies dependencies
+    -- liftIO $ printDependencies dependencies
     liftIO $ writeIORef globalEnvIORef dependencies
     pure guts
 

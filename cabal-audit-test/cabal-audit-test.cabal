@@ -34,7 +34,10 @@ common common
 
 library
   import:          common
-  build-depends:   cabal-audit-plugin
+  build-depends:
+    , cabal-audit-plugin
+    , json
+
   ghc-options:     -fplugin CabalAudit.Plugin -fwrite-if-simplified-core
   hs-source-dirs:  src
   exposed-modules:
