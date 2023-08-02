@@ -35,17 +35,9 @@ common common
 library
   import:          common
   hs-source-dirs:  src
-  exposed-modules:
-    CabalAuditIface
-
+  exposed-modules: CabalAuditIface
   build-depends:
-    , algebraic-graphs
     , binary
-    , bytestring
     , containers
-    , directory
-    , filepath
-    , generic-lens
     , ghc
-    , lens
-    , transformers
+    , ghc-paths

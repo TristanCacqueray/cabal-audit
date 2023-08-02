@@ -1,4 +1,4 @@
--- This does not work, 'tcTopIfaceBindings' fails because it can't find the unit
+-- | Analyze module dependencies using `.hi` files compiled with `-fwrite-if-simplified-core`.
 module CabalAuditIface where
 
 import Control.Monad.IO.Class (liftIO)
@@ -13,12 +13,13 @@ import GHC.Driver.Env.Types
 import GHC.Driver.Session
 import GHC.Iface.Load (readIface)
 import GHC.IfaceToCore
+import GHC.Paths (libdir)
 import GHC.Tc.Types
 import GHC.Types.SourceFile (hscSourceToIsBoot)
 import GHC.Types.TypeEnv (emptyTypeEnv)
 
 import Data.Foldable
-import GHC.Unit.Types (UnitId (UnitId), stringToUnit)
+import GHC.Unit.Types (stringToUnit)
 import GHC.Utils.Outputable hiding ((<>))
 
 getCoreBind :: ModIface -> Ghc [CoreBind]
@@ -57,19 +58,21 @@ loadIface moduleName fp = do
 
 main :: IO ()
 main = do
-    runGhc Nothing do
-        liftIO $ putStrLn $ "Loading iface..."
-        let fp = "dist-newstyle/build/x86_64-linux/ghc-9.6.1/cabal-audit-0.1/t/spec/noopt/build/spec/spec-tmp/CabalAudit/Test/Simple.hi"
-            modName = "CabalAudit.Test.Simple"
-        target <- guessTarget modName (Just $ UnitId "main") Nothing
-        liftIO $ putStrLn $ "Target: " <> showPpr (ppr target)
-        addTarget target
-        modIface <- loadIface (mkModuleName "CabalAudit.Test.Simple") fp
-        liftIO $ putStrLn $ "Got iface: " <> showPpr (ppr modIface.mi_extra_decls)
-        coreBinds <- getCoreBind modIface
-        liftIO do
-            putStrLn $ "Corebinds " <> show (length coreBinds)
-            traverse_ (putStrLn . showPpr . ppr) coreBinds
+    runGhc (Just libdir) do
+        dflags <- getSessionDynFlags
+        setSessionDynFlags dflags
+        liftIO $ putStrLn $ "Lookup module..."
+        genModule <- lookupModule (mkModuleName "Data.Void") Nothing
+        liftIO $ putStrLn $ "get module info"
+        Just modInfo <- getModuleInfo genModule
+
+        case modInfoIface modInfo of
+            Nothing -> liftIO $ putStrLn "No iface?"
+            Just modIface -> do
+                liftIO $ putStrLn $ "Got iface: " <> showPpr (ppr modIface.mi_extra_decls)
+                coreBinds <- getCoreBind modIface
+                liftIO $ putStrLn $ "Corebinds " <> show (length coreBinds)
+                liftIO $ traverse_ (putStrLn . showPpr . ppr) coreBinds
 
 showPpr :: SDoc -> String
 showPpr = showSDocOneLine defaultSDocContext
