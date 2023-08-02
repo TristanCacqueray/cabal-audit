@@ -4,6 +4,21 @@ cabal-audit is a command line tool to list the external declarations used in a g
 The goal is to inspect the build dependencies with the
 [security-advisories](https://github.com/haskell/security-advisories).
 
+## Overview and scope
+
+This project is composed of a few packages:
+
+- [cabal-audit-plugin](./cabal-audit-plugin): collect dependencies using a plugin.
+- [cabal-audit-command](./cabal-audit-command): process the collected dependencies.
+- [cabal-audit-test](./cabal-audit-test): a bunch of modules for testing
+
+- [cabal-audit-hie](./cabal-audit-hie): an investigation to collect dependencies through `.hie` files
+- [cabal-audit-hi](./cabal-audit-hi): an investigation to collect dependencies through `.hi` files built with `-fwrite-if-simplified-core`
+
+The scope of this project is to alert the user when a vulnerable function is being used.
+Searching for individual function is particularly important to avoid false alarm when a
+given vulnerability only appears in a rarely used declaration of a popular package.
+
 ## Demo
 
 Given this module:
@@ -26,15 +41,21 @@ CabalAudit.Test.Simple.afficheNombre: GHC.Base.pure, GHC.Show.show, System.IO.pu
 CabalAudit.Test.Simple.maFonction: System.IO.putStr
 ```
 
-## Features
+## Roadmap
 
-- [x] List external declaration.
-- [ ] Handle type class instance evidences.
-- [ ] Load every hie files (for ghc and hackage libs).
-- [ ] Discover the list of exposed module.
+- [x] Collect external declarations.
+- [ ] Analyze build dependencies.
+- [ ] Implement the `cabal-audit` command.
 
-## References
+## References documentation
 
+### plugin
+- GHC user-guide [Compiler Plugins](https://downloads.haskell.org/~ghc/9.6.2/docs/users_guide/extending_ghc.html#compiler-plugins)
+
+### hie
 - Haskell wiki [hie-files](https://gitlab.haskell.org/ghc/ghc-wiki-mirror/-/blob/master/hie-files.md)
 - GHC module [GHC.Iface.Ext.Types](https://hackage.haskell.org/package/ghc-9.6.1/docs/GHC-Iface-Ext-Types.html)
 - Weeder examples [repo](https://github.com/ocharles/weeder/blob/master/src/Weeder.hs)
+
+### hi
+- GHC module [GHC.IfaceToCore](https://hackage.haskell.org/package/ghc-9.6.1/docs/GHC-IfaceToCore.html)

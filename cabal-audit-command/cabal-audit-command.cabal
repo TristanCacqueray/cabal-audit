@@ -1,5 +1,5 @@
 cabal-version: 3.0
-name:          cabal-audit
+name:          cabal-audit-command
 version:       0.1
 synopsis:      Check external declarations.
 description:   This packages provides the cabal-audit command.
@@ -35,20 +35,16 @@ common common
 library
   import:          common
   hs-source-dirs:  src
-  exposed-modules:
-    CabalAudit
-    CabalAuditIface
-    HieLoader
-
+  exposed-modules: CabalAudit.Command
   build-depends:
     , algebraic-graphs
     , binary
     , bytestring
+    , cabal-audit-plugin
     , containers
     , directory
     , filepath
     , generic-lens
-    , ghc
     , lens
     , transformers
 
@@ -57,18 +53,4 @@ executable cabal-audit
   hs-source-dirs: app
   main-is:        Main.hs
   ghc-options:    -threaded -rtsopts -with-rtsopts=-T
-  build-depends:  cabal-audit
-
-test-suite spec
-  import:         common
-  hs-source-dirs: test
-  main-is:        Spec.hs
-  build-depends:  cabal-audit, cabal-audit-plugin
-  ghc-options:    -fplugin CabalAudit.Plugin -fwrite-if-simplified-core
-  other-modules:
-    CabalAudit.Test.Instance
-    CabalAudit.Test.Simple
-    CabalAudit.Test.Class
-    CabalAudit.Test.User
-
-  type:           exitcode-stdio-1.0
+  build-depends:  cabal-audit-command

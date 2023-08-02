@@ -5,10 +5,10 @@ import CabalAudit.Test.Class
 data Tea = Tea
 
 instance TestClass Tea where
-  tasty = not . alwaysTrue
+    tasty = not . alwaysTrue
 
 instance Show Tea where
-  show Tea = "the" ++ "!"
+    show Tea = "the" ++ "!"
 
 alwaysTrue :: Tea -> Bool
 alwaysTrue = const True

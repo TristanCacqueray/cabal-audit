@@ -17,10 +17,9 @@ import GHC.Tc.Types
 import GHC.Types.SourceFile (hscSourceToIsBoot)
 import GHC.Types.TypeEnv (emptyTypeEnv)
 
-import CabalAudit (showPpr)
 import Data.Foldable
 import GHC.Unit.Types (UnitId (UnitId), stringToUnit)
-import GHC.Utils.Outputable (ppr)
+import GHC.Utils.Outputable hiding ((<>))
 
 getCoreBind :: ModIface -> Ghc [CoreBind]
 getCoreBind modIface = do
@@ -71,3 +70,6 @@ main = do
         liftIO do
             putStrLn $ "Corebinds " <> show (length coreBinds)
             traverse_ (putStrLn . showPpr . ppr) coreBinds
+
+showPpr :: SDoc -> String
+showPpr = showSDocOneLine defaultSDocContext

@@ -1,7 +1,12 @@
 {-# LANGUAGE GADTs #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module CabalAudit.Plugin where
+module CabalAudit.Plugin (
+    plugin,
+    DeclarationFS (..),
+    Dependencies,
+    printDependencies,
+) where
 
 import Control.Monad
 import Data.IORef

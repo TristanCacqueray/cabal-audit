@@ -1,0 +1,51 @@
+cabal-version: 3.0
+name:          cabal-audit-hi
+version:       0.1
+synopsis:      WIP
+description:   WIP.
+category:      Development
+author:        Tristan Cacqueray
+maintainer:    tdecacqu@redhat.com
+license:       MIT
+license-file:  LICENSE
+build-type:    Simple
+
+source-repository head
+  type:     git
+  location: https://github.com/TristanCacqueray/cabal-audit
+
+common common
+  build-depends:      base <5
+  default-language:   GHC2021
+  ghc-options:
+    -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures
+    -fwrite-ide-info -Wno-missing-methods
+
+  default-extensions:
+    BlockArguments
+    DerivingStrategies
+    ImportQualifiedPost
+    LambdaCase
+    OverloadedLabels
+    OverloadedRecordDot
+    OverloadedStrings
+    PartialTypeSignatures
+    StrictData
+
+library
+  import:          common
+  hs-source-dirs:  src
+  exposed-modules:
+    CabalAuditIface
+
+  build-depends:
+    , algebraic-graphs
+    , binary
+    , bytestring
+    , containers
+    , directory
+    , filepath
+    , generic-lens
+    , ghc
+    , lens
+    , transformers

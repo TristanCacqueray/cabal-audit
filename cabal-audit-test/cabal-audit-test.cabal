@@ -1,0 +1,51 @@
+cabal-version: 3.0
+name:          cabal-audit-test
+version:       0.1
+synopsis:      Test module for cabal-audit
+description:   Test module for cabal-audit.
+category:      Development
+author:        Tristan Cacqueray
+maintainer:    tdecacqu@redhat.com
+license:       MIT
+license-file:  LICENSE
+build-type:    Simple
+
+source-repository head
+  type:     git
+  location: https://github.com/TristanCacqueray/cabal-audit
+
+common common
+  build-depends:      base <5
+  default-language:   GHC2021
+  ghc-options:
+    -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures
+    -fwrite-ide-info -Wno-missing-methods
+
+  default-extensions:
+    BlockArguments
+    DerivingStrategies
+    ImportQualifiedPost
+    LambdaCase
+    OverloadedLabels
+    OverloadedRecordDot
+    OverloadedStrings
+    PartialTypeSignatures
+    StrictData
+
+library
+  import:          common
+  build-depends:   cabal-audit-plugin
+  ghc-options:     -fplugin CabalAudit.Plugin -fwrite-if-simplified-core
+  hs-source-dirs:  src
+  exposed-modules:
+    CabalAudit.Test.Class
+    CabalAudit.Test.Instance
+    CabalAudit.Test.Simple
+    CabalAudit.Test.User
+
+test-suite spec
+  import:         common
+  hs-source-dirs: test
+  main-is:        Spec.hs
+  build-depends:  cabal-audit-test
+  type:           exitcode-stdio-1.0

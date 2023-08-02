@@ -1,12 +1,13 @@
-module HieLoader
-  ( -- * Hie paths
+module HieLoader (
+    -- * Hie paths
     loadHiePaths,
     HiePaths,
+
     -- * Hie loader
     newHieState,
     lookupOrLoadHieFile,
     HieState,
-    )
+)
 where
 
 import GHC.Iface.Ext.Binary

@@ -1,4 +1,4 @@
-module CabalAudit where
+module CabalAuditHie where
 
 -- base
 import Control.Monad
