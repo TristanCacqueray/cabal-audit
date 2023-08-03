@@ -122,6 +122,7 @@
       ];
 
     in {
+      pluginExtend = haskellExtendWithHix;
       packages."x86_64-linux".default =
         pkgs.haskell.lib.justStaticExecutables hsPkgs.cabal-audit-command;
       packages."x86_64-linux".test = hsPkgsTest.tagged;
@@ -132,6 +133,8 @@
           p.cabal-audit-plugin
           p.cabal-audit-command
           p.cabal-audit-hi
+          p.cabal-audit-hie
+          p.cabal-audit-test
         ];
         buildInputs = with pkgs; [ ghcid haskell-language-server ] ++ baseTools;
       };

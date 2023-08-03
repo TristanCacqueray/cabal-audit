@@ -4,6 +4,7 @@ cabal-audit is a command line tool to list the external declarations used in a g
 The goal is to inspect the build dependencies with the
 [security-advisories](https://github.com/haskell/security-advisories).
 
+
 ## Overview and scope
 
 This project is composed of a few packages:
@@ -18,6 +19,84 @@ This project is composed of a few packages:
 The scope of this project is to alert the user when a vulnerable function is being used.
 Searching for individual function is particularly important to avoid false alarm when a
 given vulnerability only appears in a rarely used declaration of a popular package.
+
+
+## Usage
+
+### Build the cabal-audit-plugin
+
+Run the following command to get the plugin location (pluginSoPath):
+
+```ShellSession
+$ cabal build cabal-audit-plugin
+$ pluginSoPath=$(realpath $(find dist-newstyle/ -name "libcabal-audit-plugin.so" | tail -n 1))
+```
+
+> Note that this process is heavily inspired by [ghc-wpc](https://github.com/grin-compiler/ghc-whole-program-compiler-project#build)
+
+### Collect the dependencies
+
+The full dependencies call graph needs to be computed before it can be analyzed.
+This can be done by enabling the cabal-audit-plugin globally to produce `.hix` files
+with the relevant information (written next to the `.hi` files).
+
+#### cabal
+
+Add the following lines to your project's `cabal.project`:
+
+```
+package *
+  ghc-options:
+    -fplugin-trustworthy
+    -fplugin-library='${pluginSoPath};cabal-audit-plugin;CabalAudit.Plugin;[]'"
+```
+
+#### stack
+
+Add the following lines to your project's `stack.yaml`:
+
+```
+apply-ghc-options: everything
+ghc-options:
+  "$everything":
+    -fplugin-trustworthy
+    -fplugin-library='${pluginSoPath};cabal-audit-plugin;CabalAudit.Plugin;[]'"
+```
+
+#### nix
+
+Use the following nix flake setup:
+
+```nix
+{
+  nixConfig.bash-prompt = "[nix(cabal-audit)] ";
+  inputs = {
+    cabal-audit.url = "github:TristanCacqueray/cabal-audit";
+  };
+
+  outputs = { self, cabal-audit }:
+    let
+      # patch all dependencies to be built with the plugin:
+      haskellPackages = your-haskell-package-set.extend canal-audit.pluginExtend
+    in {
+      devShells = your-dev-shell {
+        # add the cabal-audit command to the develop shell:
+        buildInputs = [haskellPackages.cabal-audit-command]
+      }
+    }
+}
+```
+
+### Use the cabal-audit command
+
+Analyze your build with the following command:
+
+```
+$ cabal run cabal-audit-command -- --help
+Usage: cabal-audit [--extra-lib-dirs ARG] MODULE...
+```
+
+Note that you need to list the exposed modules (your roots).
 
 ## Demo
 
@@ -34,26 +113,28 @@ maFonction :: String -> IO ()
 maFonction = putStr
 ```
 
-cabal-audit lists the following declarations:
+Run the following command:
 
 ```ShellSession
-CabalAudit.Test.Simple.afficheNombre: GHC.Base.pure, GHC.Show.show, System.IO.putStrLn, GHC.Tuple.Prim.()
-CabalAudit.Test.Simple.maFonction: System.IO.putStr
+$ cabal run cabal-audit-command -- CabalAudit.Test.Simple
+cabal-audit-test-0.1-inplace:CabalAudit.Test.Simple.afficheNombre: base:GHC.Base.pure, base:GHC.Base.$fApplicativeIO, base:GHC.Show.show, base:GHC.Show.$fShowInt, base:System.IO.putStrLn, ghc-prim:GHC.Tuple.Prim.()
+cabal-audit-test-0.1-inplace:CabalAudit.Test.Simple.maFonction: base:System.IO.putStr
 ```
 
 ## Roadmap
 
 - [x] Collect external declarations.
-- [ ] Analyze build dependencies.
-- [ ] Implement the `cabal-audit` command.
+- [x] Analyze build dependencies.
+- [ ] Analyze whole package (e.g. automatically discover the list of exposed modules)
+- [ ] Implement the `cabal-audit` command with the advisory-advisories database.
 
 ## Note about ghc libraries
 
-To get [ghc libraries](https://downloads.haskell.org/~ghc/9.6.2/docs/libraries/index.html) dependencies metadata:
+To get [ghc libraries](https://downloads.haskell.org/~ghc/9.6.2/docs/libraries/index.html) dependencies:
 
 ### Using the plugin
 
-Get the `libcabal-audit-plugin.so` path and use these arguments: `-fplugin-trustworthy -fplugin-library='${pluginSoPath};cabal-audit-plugin;CabalAudit.Plugin;[]'"`
+TODO
 
 ### Using `.hie` file
 
@@ -67,6 +148,7 @@ hadrian/build -j --flavour=Quick stage2:lib:text
 
 Build ghc with `hadrian/build -j --flavour=Quick+hi_core`.
 Then run: `cabal --with-ghc=/srv/localhost/git/gitlab.haskell.org/ghc/ghc/_build/stage1/bin/ghc repl cabal-audit-hi`
+
 
 ## References documentation
 

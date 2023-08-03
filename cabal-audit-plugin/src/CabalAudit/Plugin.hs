@@ -3,9 +3,11 @@
 
 module CabalAudit.Plugin (
     plugin,
+    getDependenciesFromCoreBinds,
     DeclarationFS (..),
     Dependencies,
     printDependencies,
+    readDependencies,
 ) where
 
 import Control.Monad
@@ -23,11 +25,13 @@ import GHC.IO (unsafePerformIO)
 import GHC.Plugins hiding ((<>))
 
 import Data.Binary qualified as Binary
+import GHC.Types.Unique (getKey)
 
 data DeclarationFS = DeclarationFS
     { declModuleName :: FastString
     , declUnitId :: FastString
     , declOccName :: FastString
+    , declUnique :: Int
     }
     deriving (Eq, Generic, Ord)
 
@@ -58,49 +62,55 @@ plugin =
 
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
 install _ todo = do
-    return (todo <> [CoreDoPluginPass "Collect Dependencies" pass])
+    return (CoreDoPluginPass "Collect Dependencies" pass : todo)
 
 {-# NOINLINE globalEnvIORef #-}
-globalEnvIORef :: IORef Dependencies
+globalEnvIORef :: IORef (Map.Map ModuleName Dependencies)
 globalEnvIORef = unsafePerformIO $ newIORef mempty
 
 -- | Pass collects the dependencies and register them to the global env for the driverFun
 pass :: ModGuts -> CoreM ModGuts
 pass guts = do
-    let genModule = guts.mg_module
-    let getDependencies :: CoreBind -> Dependencies
-        getDependencies = \case
-            NonRec b expr -> [(mkDecl genModule (varName b), getExprDeps expr)]
-            Rec xs -> foldMap getDependencies ((\(b, e) -> NonRec b e) <$> xs)
-
-        getExprDeps :: Expr Var -> [DeclarationFS]
-        getExprDeps = \case
-            Var var -> [varDecl genModule var]
-            Lit _lit -> mempty
-            App expr arg -> foldMap getExprDeps [expr, arg]
-            Lam b expr -> varDecl genModule b : getExprDeps expr
-            Let bind expr -> getBindDeps bind <> getExprDeps expr
-            Case expr b _type alt -> varDecl genModule b : getExprDeps expr <> foldMap getAltDeps alt
-            Cast expr _coer -> getExprDeps expr
-            Tick _ expr -> getExprDeps expr
-            Type _type -> mempty
-            Coercion _coer -> mempty
-
-        getBindDeps :: CoreBind -> [DeclarationFS]
-        getBindDeps = \case
-            NonRec b expr -> varDecl genModule b : getExprDeps expr
-            Rec xs -> foldMap (\(b, expr) -> varDecl genModule b : getExprDeps expr) xs
-
-        getAltDeps :: Alt Var -> [DeclarationFS]
-        getAltDeps = \case
-            Alt _altCon bs expr -> map (varDecl genModule) bs <> getExprDeps expr
-
     let dependencies :: Dependencies
-        dependencies = reduceDependencies $ foldMap getDependencies guts.mg_binds
+        dependencies = getDependenciesFromCoreBinds guts.mg_module guts.mg_binds
 
-    -- liftIO $ printDependencies dependencies
-    liftIO $ writeIORef globalEnvIORef dependencies
+    liftIO do
+        putStrLn $ " XX  Processed core for " <> show (moduleName guts.mg_module) <> ": " <> show (length dependencies)
+        -- printDependencies dependencies
+        modifyIORef globalEnvIORef $ Map.insert (moduleName guts.mg_module) dependencies
+
     pure guts
+
+getDependenciesFromCoreBinds :: Module -> [CoreBind] -> Dependencies
+getDependenciesFromCoreBinds genModule coreBinds =
+    reduceDependencies $ foldMap (getDependenciesFromCore genModule) coreBinds
+
+getDependenciesFromCore :: Module -> CoreBind -> Dependencies
+getDependenciesFromCore genModule = \case
+    NonRec b expr -> [(mkDecl genModule (varName b), getExprDeps expr)]
+    Rec xs -> foldMap (getDependenciesFromCore genModule) ((\(b, e) -> NonRec b e) <$> xs)
+  where
+    getExprDeps :: Expr Var -> [DeclarationFS]
+    getExprDeps = \case
+        Var var -> [varDecl genModule var] -- this also capture local variable
+        Lit _lit -> mempty
+        App expr arg -> foldMap getExprDeps [expr, arg]
+        Lam _b expr -> getExprDeps expr
+        Let bind expr -> getBindDeps bind <> getExprDeps expr
+        Case expr _b _type alt -> getExprDeps expr <> foldMap getAltDeps alt
+        Cast expr _coer -> getExprDeps expr
+        Tick _ expr -> getExprDeps expr
+        Type _type -> mempty
+        Coercion _coer -> mempty
+
+    getBindDeps :: CoreBind -> [DeclarationFS]
+    getBindDeps = \case
+        NonRec _b expr -> getExprDeps expr
+        Rec xs -> foldMap (\(_b, expr) -> getExprDeps expr) xs
+
+    getAltDeps :: Alt Var -> [DeclarationFS]
+    getAltDeps = \case
+        Alt _altCon _bs expr -> getExprDeps expr
 
 driverFun :: [CommandLineOption] -> HscEnv -> IO HscEnv
 driverFun _ hscEnv = do
@@ -112,14 +122,35 @@ driverFun _ hscEnv = do
 
 -- | Serialize the collected dependencies (from the global env) next to the .hi file
 runPhaseFun :: TPhase a -> IO a
-runPhaseFun phase = case phase of
-    -- T_Cc _phase _pipeEnv hscEnv location input_fn -> do
-    T_HscBackend _pipeEnv _hscEnv _modName _hscSource modLocation _action -> do
-        result <- runPhase phase
-        dependencies <- readIORef globalEnvIORef
-        liftIO $ writeDependencies (modLocation.ml_hi_file <> "x") dependencies
-        pure result
-    _ -> runPhase phase
+runPhaseFun phase = do
+    let _phaseStr :: String
+        _phaseStr = case phase of
+            T_Unlit{} -> "T_Unlit"
+            T_FileArgs _hscEnv fp -> "T_FileArgs: " <> fp
+            T_Cpp{} -> "T_Cpp"
+            T_HsPp{} -> "T_HsPp"
+            T_HscRecomp{} -> "T_HscRecomp"
+            T_Hsc{} -> "T_Hsc"
+            T_HscPostTc{} -> "T_HscPostTc"
+            T_HscBackend _pipeEnv _hscEnv _modName _hscSource _modLocation _action -> "T_HscBackend: " <> show _modName
+            T_CmmCpp{} -> "T_CmmCpp"
+            T_Cmm{} -> "T_Cmm"
+            T_Cc{} -> "T_Cc"
+            T_As{} -> "T_As"
+            T_LlvmOpt{} -> "T_LlvmOpt"
+            T_LlvmLlc{} -> "T_LlvmLlc"
+            T_LlvmMangle{} -> "T_LlvmMangle"
+            T_MergeForeign{} -> "T_MergeForeign"
+            _ -> "?"
+
+    -- putStrLn $ " XXX:  runPhaseFun phase: " <> phaseStr
+    case phase of
+        T_HscBackend _pipeEnv _hscEnv modName _hscSource modLocation _action -> do
+            result <- runPhase phase
+            dependencies <- fromMaybe [] . Map.lookup modName <$> readIORef globalEnvIORef
+            liftIO $ writeDependencies (modLocation.ml_hi_file <> "x") dependencies
+            pure result
+        _ -> runPhase phase
 
 varDecl :: Module -> Var -> DeclarationFS
 varDecl genModule var = case mkGlobalDecl name of
@@ -134,16 +165,17 @@ mkGlobalDecl name = do
     pure $ mkDecl genModule name
 
 mkDecl :: Module -> Name -> DeclarationFS
-mkDecl genModule name = DeclarationFS{declUnitId, declModuleName, declOccName}
+mkDecl genModule name = DeclarationFS{declUnitId, declModuleName, declOccName, declUnique}
   where
     declUnitId = unitIdFS (moduleUnitId genModule)
     declModuleName = moduleNameFS (genModule.moduleName)
     declOccName = occNameFS (nameOccName name)
+    declUnique = getKey (nameUnique name)
 
 instance Binary.Binary DeclarationFS
 
 instance Outputable DeclarationFS where
-    ppr decl = hcat [ppr decl.declUnitId, ":", ppr decl.declModuleName, ".", ppr decl.declOccName]
+    ppr decl = hcat [ppr decl.declUnitId, ":", ppr decl.declModuleName, ".", ppr decl.declOccName, "_", ppr decl.declUnique]
 
 instance Show DeclarationFS where
     show = showSDocOneLine defaultSDocContext . ppr
@@ -164,5 +196,8 @@ printDependencies dependencies = do
 
 writeDependencies :: FilePath -> Dependencies -> IO ()
 writeDependencies fp dependencies = do
-    putStrLn $ "XXX Writing dependencies info " <> fp <> ": " <> show (length dependencies)
+    putStrLn $ " XXX Writing " <> show (length dependencies) <> " dependencies info to: " <> fp
     Binary.encodeFile fp dependencies
+
+readDependencies :: FilePath -> IO Dependencies
+readDependencies fp = Binary.decodeFile fp

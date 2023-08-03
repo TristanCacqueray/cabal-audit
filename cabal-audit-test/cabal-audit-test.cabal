@@ -45,6 +45,7 @@ library
     CabalAudit.Test.Instance
     CabalAudit.Test.Simple
     CabalAudit.Test.User
+    CabalAudit.Test.External
 
 test-suite spec
   import:         common
