@@ -96,7 +96,11 @@ $ cabal run cabal-audit-command -- --help
 Usage: cabal-audit [--extra-lib-dirs ARG] MODULE...
 ```
 
-Note that you need to list the exposed modules (your roots).
+Note that you need to list the exposed modules (your roots). The command generates a edges.tsv file that can be visualized with gephi.
+For example, the CabalAudit.Test.External module looks like this:
+
+![cabal-audit](https://github.com/TristanCacqueray/cabal-audit/assets/154392/fc7d42b0-4b32-447b-aa00-6fc2254d5a43)
+
 
 ## Demo
 
