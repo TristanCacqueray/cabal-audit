@@ -42,14 +42,13 @@ library
   hs-source-dirs:  src
   exposed-modules:
     CabalAudit.Test.Class
+    CabalAudit.Test.External
     CabalAudit.Test.Instance
     CabalAudit.Test.Simple
     CabalAudit.Test.User
-    CabalAudit.Test.External
 
 test-suite spec
   import:         common
   hs-source-dirs: test
   main-is:        Spec.hs
-  build-depends:  cabal-audit-test
   type:           exitcode-stdio-1.0

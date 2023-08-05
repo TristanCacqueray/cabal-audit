@@ -30,28 +30,24 @@ common common
     OverloadedRecordDot
     OverloadedStrings
     PartialTypeSignatures
-    StrictData
     QuasiQuotes
+    StrictData
 
 library
   import:          common
   hs-source-dirs:  src
-  exposed-modules: CabalAudit.Command
-                   CabalAudit.LoadUtils
-                   CabalAudit.GhcPkg
+  exposed-modules:
+    CabalAudit.Command
+    CabalAudit.GhcPkg
+    CabalAudit.LoadUtils
+
   build-depends:
-    , algebraic-graphs
-    , binary
     , bytestring
     , cabal-audit-plugin
     , containers
-    , directory
     , filepath
-    , generic-lens
-    , lens
-    , optparse-applicative
-    , transformers
     , ghc
+    , optparse-applicative
     , process
 
 executable cabal-audit

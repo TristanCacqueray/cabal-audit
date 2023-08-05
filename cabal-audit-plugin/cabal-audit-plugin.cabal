@@ -16,13 +16,8 @@ source-repository head
   type:     git
   location: https://github.com/TristanCacqueray/cabal-audit
 
-library
-  build-depends:
-    , base        <5
-    , binary
-    , containers
-    , ghc
-
+common common
+  build-depends:      base <5
   default-language:   GHC2021
   ghc-options:
     -Wall -fwarn-incomplete-uni-patterns -Wno-partial-type-signatures
@@ -39,29 +34,21 @@ library
     PartialTypeSignatures
     StrictData
 
-  hs-source-dirs:     src
-  exposed-modules:    CabalAudit.Plugin
-
-foreign-library cabal-audit-plugin
-  type:               native-shared
-  default-language:   GHC2021
-  hs-source-dirs:     src
-  default-extensions:
-    BlockArguments
-    DerivingStrategies
-    ImportQualifiedPost
-    LambdaCase
-    OverloadedLabels
-    OverloadedRecordDot
-    OverloadedStrings
-    PartialTypeSignatures
-    StrictData
-
-  ghc-options:        -this-unit-id cabal-audit-plugin -fno-link-rts
   build-depends:
     , base        <5
     , binary
     , containers
     , ghc
 
-  other-modules:      CabalAudit.Plugin
+  hs-source-dirs:     src
+
+library
+  import:          common
+  exposed-modules: CabalAudit.Plugin
+
+-- This produces the .so version
+foreign-library cabal-audit-plugin
+  import:        common
+  type:          native-shared
+  ghc-options:   -this-unit-id cabal-audit-plugin -fno-link-rts
+  other-modules: CabalAudit.Plugin
