@@ -93,7 +93,17 @@ Analyze your build with the following command:
 
 ```
 $ cabal run cabal-audit-command -- --help
-Usage: cabal-audit [--extra-lib-dirs ARG] MODULE...
+cabal-audit - detects uses of known vulnerabilities
+
+Usage: cabal-audit [--extra-lib-dirs DIR] [--write-graph FILENAME]
+                   [--target DECLARATION] MODULE...
+
+Available options:
+  --extra-lib-dirs DIR     Search module dependencies in DIR (e.g. for ghc
+                           librarires)
+  --write-graph FILENAME   Dump nodes.tsv and edges.tsv files
+  --target DECLARATION     Check if a declaration is reachable
+  -h,--help                Show this help text
 ```
 
 Note that you need to list the exposed modules (your roots). The command generates a edges.tsv file that can be visualized with gephi.

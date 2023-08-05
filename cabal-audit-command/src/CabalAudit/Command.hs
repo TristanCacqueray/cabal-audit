@@ -17,6 +17,7 @@ import CabalAudit.GhcPkg
 import CabalAudit.LoadUtils
 import CabalAudit.Plugin
 
+import Data.Maybe (listToMaybe)
 import Options.Applicative
 import System.IO (IOMode (..), hPutStrLn, stderr, withFile)
 
@@ -26,7 +27,14 @@ data Analysis = Analysis
     , unknownDeclsRef :: Set DeclarationFS
     }
 
--- | Unique are not stable accross module, so we remove them here until the plugin generate them correctly
+{- | This functions keeps the unique attribute only for duplicate top level declaration.
+ This is necessary because Unique are not stable accross module.
+ The assumptions is that:
+ 1. only type class instance (starting with $c) needs unique (their toplevel name appears dupplicated otherwise).
+ 2. These $c variables are not used directly, external users reference the '$f' variant instead.
+ Therefor it should be safe to remove the Unique for non duplicated declaration.
+ However this seems like a hack to get the relevant type class instance declaration.
+-}
 removeUnique :: Dependencies -> Dependencies
 removeUnique deps = map removeTopDecl deps
   where
@@ -77,6 +85,7 @@ collectDependencies rootPaths rootModules = do
                         Nothing -> addEmpty unknownDecls decl
                         Just newDependencies -> pure newDependencies
                     modifyIORef allDependencies $ Map.insert decl declDeps
+                    -- collect the dependencies of the dependencies
                     traverse_ go declDeps
     traverse_ go (concat $ Map.elems rootDependencies)
 
@@ -85,35 +94,41 @@ collectDependencies rootPaths rootModules = do
         <*> readIORef missingModules
         <*> readIORef unknownDecls
 
-vulnToDecl :: Dependencies -> String -> Maybe DeclarationFS
-vulnToDecl callGraph vuln = findDecl callGraph
+-- | Convert the user-provided dependency definition into a DeclarationFS
+findTarget :: Dependencies -> String -> Maybe DeclarationFS
+findTarget callGraph target = findDecl callGraph
   where
     findDecl [] = Nothing
-    findDecl ((decl, _) : rest)
+    findDecl ((decl, decls) : rest)
         | declMatch decl = Just decl
-        | otherwise = findDecl rest
+        | otherwise = listToMaybe (filter declMatch decls) <|> findDecl rest
     declMatch :: DeclarationFS -> Bool
-    declMatch decl = vulnModule == decl.declModuleName && vulnName == decl.declOccName
+    declMatch decl = targetModule == decl.declModuleName && targetName == decl.declOccName
 
-    vulnModule = mkFastString $ dropWhileEnd (/= '.') vuln
-    vulnDecl = reverse $ takeWhile (/= '.') $ reverse vuln
-    vulnName = mkFastString $ vulnDecl
+    targetModule = mkFastString $ dropWhileEnd (== '.') $ dropWhileEnd (/= '.') target
+    targetDecl = reverse $ takeWhile (/= '.') $ reverse target
+    targetName = mkFastString $ targetDecl
 
-checkVuln :: [String] -> Dependencies -> IO ()
-checkVuln _vulns _callGraph = do
-    pure ()
+checkTarget :: Dependencies -> [String] -> IO ()
+checkTarget callGraph targets = forM_ targets \target -> do
+    case findTarget callGraph target of
+        Just decl -> do
+            hPutStrLn stderr $ show decl <> ": call by TODO"
+        Nothing -> hPutStrLn stderr $ target <> ": couldn't find in the dependencies " <> show (length callGraph)
 
 data CabalAuditUsage = CabalAuditUsage
     { extraLibDirs :: [OsPath]
-    , vulnDecls :: [String]
+    , graphOutput :: Maybe FilePath
+    , targetDecls :: [String]
     , rootModules :: [ModuleName]
     }
 
 usage :: Parser CabalAuditUsage
 usage =
     pure CabalAuditUsage
-        <*> many (toOsPath <$> strOption (long "extra-lib-dirs"))
-        <*> many (strOption (long "vuln" <> help "test"))
+        <*> many (toOsPath <$> strOption (long "extra-lib-dirs" <> metavar "DIR" <> help "Search module dependencies in DIR (e.g. for ghc librarires)"))
+        <*> optional (strOption (long "write-graph" <> metavar "FILENAME" <> help "Dump nodes.tsv and edges.tsv files"))
+        <*> many (strOption (long "target" <> metavar "DECLARATION" <> help "Check if a declaration is reachable"))
         <*> some (mkModuleName <$> argument str (metavar "MODULE..."))
   where
     toOsPath :: FilePath -> OsPath
@@ -132,21 +147,30 @@ main = do
     let rootPaths = [osp|./dist-newstyle|] : args.extraLibDirs <> Set.toList libs
     analysis <- collectDependencies rootPaths args.rootModules
     unless (Set.null analysis.missingModules) do
-        hPutStrLn stderr $ "Unknown modules: " <> intercalate "," (show <$> Set.toList analysis.missingModules)
+        hPutStrLn stderr $ "Unknown modules: " <> intercalate ", " (show <$> Set.toList analysis.missingModules)
     unless (Set.null analysis.unknownDeclsRef) do
-        hPutStrLn stderr $ "Unknown declaration: " <> intercalate "," (show <$> Set.toList analysis.unknownDeclsRef)
+        hPutStrLn stderr $ "Unknown declaration: " <> intercalate ", " (show <$> Set.toList analysis.unknownDeclsRef)
 
-    case args.vulnDecls of
-        [] -> dumpGraph analysis.callGraph
-        xs -> checkVuln xs analysis.callGraph
+    forM_ args.graphOutput (dumpGraph analysis.callGraph)
+
+    case args.targetDecls of
+        [] ->
+            -- TODO: load the vulnerable target from the advisory db
+            dumpDependencies analysis.callGraph
+        xs -> checkTarget analysis.callGraph xs
   where
-    dumpGraph callGraph = do
-        withFile "edges.tsv" WriteMode \handle -> do
+    dumpDependencies callGraph = do
+        forM_ callGraph \(decl, deps) -> do
+            unless (null deps) do
+                putStrLn $ show decl <> ": " <> intercalate ", " (show <$> deps)
+
+    dumpGraph callGraph fp = do
+        withFile (fp <> "-edges.tsv") WriteMode \handle -> do
             hPutStrLn handle $ intercalate "\t" ["Source", "Target"]
             forM_ callGraph \(sourceDecl, deps) -> do
                 forM_ deps \targetDecl -> do
                     hPutStrLn handle $ intercalate "\t" [show sourceDecl, show targetDecl]
-        withFile "nodes.tsv" WriteMode \handle -> do
+        withFile (fp <> "-nodes.tsv") WriteMode \handle -> do
             hPutStrLn handle $ intercalate "\t" ["Id", "Label"]
             forM_ callGraph \(decl, _) -> do
                 hPutStrLn handle $ intercalate "\t" [show decl, declFmt decl]
