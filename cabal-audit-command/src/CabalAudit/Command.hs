@@ -3,12 +3,12 @@ module CabalAudit.Command where
 import Control.Monad (forM_, unless)
 import Data.Foldable (traverse_)
 import Data.IORef
-import Data.List (dropWhileEnd, intercalate)
+import Data.List (dropWhileEnd, group, intercalate)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
-import GHC.Data.FastString (mkFastString, unpackFS)
+import GHC.Data.FastString (FastString, mkFastString, unpackFS)
 import GHC.Unit.Module (ModuleName, mkModuleName, mkModuleNameFS)
 import System.OsPath (OsPath, osp)
 import System.OsPath qualified as OSP
@@ -25,6 +25,19 @@ data Analysis = Analysis
     , missingModules :: Set ModuleName
     , unknownDeclsRef :: Set DeclarationFS
     }
+
+-- | Unique are not stable accross module, so we remove them here until the plugin generate them correctly
+removeUnique :: Dependencies -> Dependencies
+removeUnique deps = map removeTopDecl deps
+  where
+    dupDecls :: Set FastString
+    dupDecls = Set.fromList $ map head $ filter (\g -> length g > 1) $ group $ map (declOccName . fst) deps
+    removeDeclUnique :: DeclarationFS -> DeclarationFS
+    removeDeclUnique decl
+        | decl.declOccName `Set.member` dupDecls = decl
+        | otherwise = decl{declUnique = 0}
+    removeTopDecl :: (DeclarationFS, [DeclarationFS]) -> (DeclarationFS, [DeclarationFS])
+    removeTopDecl (decl, declDeps) = (removeDeclUnique decl, map removeDeclUnique declDeps)
 
 collectDependencies :: [OsPath] -> [ModuleName] -> IO Analysis
 collectDependencies rootPaths rootModules = do
@@ -43,10 +56,12 @@ collectDependencies rootPaths rootModules = do
             Map.lookup moduleName <$> readIORef loadedDependencies >>= \case
                 Just deps -> pure deps
                 Nothing -> do
-                    deps <- case Map.lookup moduleName allModules of
-                        Nothing -> addEmpty missingModules moduleName
-                        Just fp -> readDependencies =<< OSP.decodeFS fp
+                    deps <-
+                        removeUnique <$> case Map.lookup moduleName allModules of
+                            Nothing -> addEmpty missingModules moduleName
+                            Just fp -> readDependencies =<< OSP.decodeFS fp
                     modifyIORef loadedDependencies $ Map.insert moduleName deps
+                    -- printDependencies deps
                     pure deps
 
     -- Logic to find dependencies

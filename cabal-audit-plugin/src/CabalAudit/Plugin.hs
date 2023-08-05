@@ -31,9 +31,12 @@ data DeclarationFS = DeclarationFS
     { declModuleName :: FastString
     , declUnitId :: FastString
     , declOccName :: FastString
-    , declUnique :: Int
+    , declUnique :: Int -- current solution to differentiate class instance
     }
     deriving (Eq, Generic, Ord)
+
+-- Q: How to tell two class instance appart?
+-- A: Use the var name Unique?
 
 type Dependencies = [(DeclarationFS, [DeclarationFS])]
 
