@@ -139,13 +139,27 @@ usage =
 declFmt :: DeclarationFS -> String
 declFmt decl = unpackFS decl.declModuleName <> "." <> unpackFS decl.declOccName
 
+getArgs :: IO CabalAuditUsage
+getArgs = execParser opts
+  where
+    opts =
+        info
+            (usage <**> helper)
+            ( fullDesc
+                <> header "cabal-audit - detects uses of known vulnerabilities"
+            )
+
 main :: IO ()
 main = do
-    args <- execParser opts
+    args <- getArgs
     libs <- getLibraryDirs
 
     let rootPaths = [osp|./dist-newstyle|] : args.extraLibDirs <> Set.toList libs
     analysis <- collectDependencies rootPaths args.rootModules
+    checkAnalysis args analysis
+
+checkAnalysis :: CabalAuditUsage -> Analysis -> IO ()
+checkAnalysis args analysis = do
     unless (Set.null analysis.missingModules) do
         hPutStrLn stderr $ "Unknown modules: " <> intercalate ", " (show <$> Set.toList analysis.missingModules)
     unless (Set.null analysis.unknownDeclsRef) do
@@ -174,10 +188,3 @@ main = do
             hPutStrLn handle $ intercalate "\t" ["Id", "Label"]
             forM_ callGraph \(decl, _) -> do
                 hPutStrLn handle $ intercalate "\t" [show decl, declFmt decl]
-
-    opts =
-        info
-            (usage <**> helper)
-            ( fullDesc
-                <> header "cabal-audit - detects uses of known vulnerabilities"
-            )

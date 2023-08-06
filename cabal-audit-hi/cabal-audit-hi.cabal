@@ -38,6 +38,16 @@ library
   exposed-modules: CabalAuditIface
   build-depends:
     , binary
+    , cabal-audit-command
+    , cabal-audit-plugin
     , containers
     , ghc
     , ghc-paths
+    , transformers
+
+executable cabal-audit-hi
+  import:         common
+  hs-source-dirs: app
+  main-is:        Main.hs
+  ghc-options:    -threaded -rtsopts -with-rtsopts=-T
+  build-depends:  cabal-audit-hi
