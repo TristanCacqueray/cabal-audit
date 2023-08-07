@@ -62,12 +62,9 @@ Use the `hiCoreExtend` attribute of the flake to patch all the packages.
 $ cabal-audit-hi --help
 cabal-audit - detects uses of known vulnerabilities
 
-Usage: cabal-audit [--extra-lib-dirs DIR] [--write-graph FILENAME]
-                   [--target DECLARATION] MODULE...
+Usage: cabal-audit-hi [--write-graph FILENAME] [--target DECLARATION] MODULE...
 
 Available options:
-  --extra-lib-dirs DIR     Search module dependencies in DIR (e.g. for ghc
-                           librarires)
   --write-graph FILENAME   Dump nodes.tsv and edges.tsv files
   --target DECLARATION     Check if a declaration is reachable
   -h,--help                Show this help text
@@ -76,6 +73,8 @@ Available options:
 Note that you need to list the exposed modules (your roots).
 
 Here is a demo graph rendered with [gephi](https://gephi.org/) through this command: `cabal-audit-hi --write-graph simple CabalAudit.Test.Simple`.
+
+![cabal-audit-hi-simple](https://github.com/TristanCacqueray/cabal-audit/assets/154392/f87126ce-1514-46f0-ab2d-056a7021c270)
 
 
 ## Legacy Plugin Usage
