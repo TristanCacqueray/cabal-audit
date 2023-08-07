@@ -41,6 +41,7 @@ library
     , cabal-audit-command
     , cabal-audit-plugin
     , containers
+    , exceptions
     , ghc
     , ghc-paths
     , transformers

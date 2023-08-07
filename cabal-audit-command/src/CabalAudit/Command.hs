@@ -1,10 +1,9 @@
 module CabalAudit.Command where
 
 import Control.Monad (forM_, unless)
+import Control.Monad.IO.Class
 import Data.Foldable (traverse_)
-import Data.IORef
 import Data.List (dropWhileEnd, group, intercalate)
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -13,19 +12,15 @@ import GHC.Unit.Module (ModuleName, mkModuleName, mkModuleNameFS)
 import System.OsPath (OsPath, osp)
 import System.OsPath qualified as OSP
 
+import CabalAudit.Analysis
 import CabalAudit.GhcPkg
 import CabalAudit.LoadUtils
 import CabalAudit.Plugin
 
+import Control.Monad.Trans.State.Strict (StateT)
 import Data.Maybe (listToMaybe)
 import Options.Applicative
 import System.IO (IOMode (..), hPutStrLn, stderr, withFile)
-
-data Analysis = Analysis
-    { callGraph :: Dependencies
-    , missingModules :: Set ModuleName
-    , unknownDeclsRef :: Set DeclarationFS
-    }
 
 {- | This functions keeps the unique attribute only for duplicate top level declaration.
  This is necessary because Unique are not stable accross module.
@@ -48,51 +43,34 @@ removeUnique deps = map removeTopDecl deps
     removeTopDecl (decl, declDeps) = (removeDeclUnique decl, map removeDeclUnique declDeps)
 
 collectDependencies :: [OsPath] -> [ModuleName] -> IO Analysis
-collectDependencies rootPaths rootModules = do
-    -- Collect issues
-    missingModules <- newIORef mempty
-    unknownDecls <- newIORef mempty
-    let addEmpty ref obj = do
-            modifyIORef ref $ Set.insert obj
-            pure []
-
+collectDependencies rootPaths rootModules = runAnalysis do
     -- Logic to read .hix files
-    allModules <- findModulesPath [osp|.hix|] rootPaths
-    loadedDependencies :: IORef (Map ModuleName Dependencies) <- newIORef mempty
-    let readModuleDependencies :: ModuleName -> IO Dependencies
-        readModuleDependencies moduleName =
-            Map.lookup moduleName <$> readIORef loadedDependencies >>= \case
-                Just deps -> pure deps
-                Nothing -> do
-                    deps <-
-                        removeUnique <$> case Map.lookup moduleName allModules of
-                            Nothing -> addEmpty missingModules moduleName
-                            Just fp -> readDependencies =<< OSP.decodeFS fp
-                    modifyIORef loadedDependencies $ Map.insert moduleName deps
-                    -- printDependencies deps
-                    pure deps
+    allModules <- liftIO (findModulesPath [osp|.hix|] rootPaths)
+    let readModuleDependencies :: ModuleName -> StateT Analysis IO Dependencies
+        readModuleDependencies moduleName = do
+            let moduleInfo = ModuleFS moduleName Nothing -- .hix doesn't contain the unitId
+            lookupOrLoadModule moduleInfo $ case Map.lookup moduleName allModules of
+                Just fp -> Just <$> (readDependencies =<< OSP.decodeFS fp)
+                Nothing -> pure Nothing
 
     -- Logic to find dependencies
-    rootDependencies <- Map.fromList <$> foldMap readModuleDependencies rootModules
-    allDependencies :: IORef (Map DeclarationFS [DeclarationFS]) <- newIORef rootDependencies
-    let go :: DeclarationFS -> IO ()
+    rootDependencies <- Map.fromList . concat <$> traverse readModuleDependencies rootModules
+    setRootDeclarations rootDependencies
+    let go :: DeclarationFS -> StateT Analysis IO ()
         go decl =
-            Map.lookup decl <$> readIORef allDependencies >>= \case
-                Just _ -> pure ()
+            Map.lookup decl <$> getAnalysis callGraph >>= \case
+                Just _ -> pure () -- Already processed
                 Nothing -> do
                     moduleDecls <- readModuleDependencies (mkModuleNameFS decl.declModuleName)
                     declDeps <- case lookup decl moduleDecls of
-                        Nothing -> addEmpty unknownDecls decl
+                        Nothing -> do
+                            addUnknownDecl decl
+                            pure []
                         Just newDependencies -> pure newDependencies
-                    modifyIORef allDependencies $ Map.insert decl declDeps
+                    addDeclaration decl declDeps
                     -- collect the dependencies of the dependencies
                     traverse_ go declDeps
     traverse_ go (concat $ Map.elems rootDependencies)
-
-    pure Analysis
-        <*> (Map.toList <$> readIORef allDependencies)
-        <*> readIORef missingModules
-        <*> readIORef unknownDecls
 
 -- | Convert the user-provided dependency definition into a DeclarationFS
 findTarget :: Dependencies -> String -> Maybe DeclarationFS
@@ -162,16 +140,16 @@ checkAnalysis :: CabalAuditUsage -> Analysis -> IO ()
 checkAnalysis args analysis = do
     unless (Set.null analysis.missingModules) do
         hPutStrLn stderr $ "Unknown modules: " <> intercalate ", " (show <$> Set.toList analysis.missingModules)
-    unless (Set.null analysis.unknownDeclsRef) do
-        hPutStrLn stderr $ "Unknown declaration: " <> intercalate ", " (show <$> Set.toList analysis.unknownDeclsRef)
+    unless (Set.null analysis.unknownDecls) do
+        hPutStrLn stderr $ "Unknown declaration: " <> intercalate ", " (show <$> Set.toList analysis.unknownDecls)
 
-    forM_ args.graphOutput (dumpGraph analysis.callGraph)
+    forM_ args.graphOutput (dumpGraph $ Map.toList analysis.callGraph)
 
     case args.targetDecls of
         [] ->
             -- TODO: load the vulnerable target from the advisory db
-            dumpDependencies analysis.callGraph
-        xs -> checkTarget analysis.callGraph xs
+            dumpDependencies (Map.toList analysis.callGraph)
+        xs -> checkTarget (Map.toList analysis.callGraph) xs
   where
     dumpDependencies callGraph = do
         forM_ callGraph \(decl, deps) -> do

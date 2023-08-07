@@ -1,13 +1,18 @@
 -- | Analyze module dependencies using `.hi` files compiled with `-fwrite-if-simplified-core`.
 module CabalAuditIface where
 
+import Control.Exception (SomeException)
+import Control.Monad.Catch (try)
 import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.State.Strict
+import Data.Foldable
 import Data.IORef (newIORef)
+import Data.Map qualified as Map
 import GHC hiding (SuccessFlag (..))
 import GHC.Core
 import GHC.Data.FastString.Env (emptyFsEnv)
 import GHC.Data.IOEnv (runIOEnv)
-import GHC.Data.Maybe
 import GHC.Driver.Env.KnotVars (emptyKnotVars)
 import GHC.Driver.Session
 import GHC.IfaceToCore
@@ -16,62 +21,52 @@ import GHC.Tc.Types
 import GHC.Types.SourceFile (hscSourceToIsBoot)
 import GHC.Types.TypeEnv (emptyTypeEnv)
 
-import Data.Foldable
-import GHC.Utils.Outputable hiding ((<>))
-
-import Control.Monad.Trans.State.Strict
-import Data.Map qualified as Map
-import Data.Map.Strict (Map)
-
+import CabalAudit.Analysis
 import CabalAudit.Command
 import CabalAudit.Plugin (DeclarationFS (..), Dependencies, getDependenciesFromCoreBinds)
-import Control.Monad.Trans.Class (lift)
-
-data LoaderState = LoaderState
-    { modules :: Map ModuleName Dependencies
-    , deps :: Map DeclarationFS [DeclarationFS]
-    }
 
 doAnalyze :: [ModuleName] -> IO Analysis
 doAnalyze rootModules = do
     let db = PkgDbPath "../dist-newstyle/packagedb/ghc-9.6.1"
     let addPackageDB dflags = dflags{packageDBFlags = [PackageDB db]}
-    let emptyState = LoaderState mempty mempty
-    runGhc (Just libdir) $ flip evalStateT emptyState do
+    runGhc (Just libdir) $ runAnalysis do
         lift $ do
             dflags <- getSessionDynFlags
             setSessionDynFlags (addPackageDB dflags)
-        (rootDependencies :: Dependencies) <- concat <$> traverse readModuleDependencies rootModules
-        modify (\s -> s{deps = Map.fromList rootDependencies})
+        let mkModuleInfo moduleName = ModuleFS moduleName Nothing
+        (rootDependencies :: Dependencies) <- concat <$> traverse readModuleDependencies (mkModuleInfo <$> rootModules)
+        setRootDeclarations (Map.fromList rootDependencies)
         traverse_ go (concat $ snd <$> rootDependencies)
-        callGraph <- Map.toList . deps <$> get
-        pure $ Analysis callGraph mempty mempty
   where
     go decl = do
         deps <- getDependencies decl
         traverse_ go deps
 
-getDependencies :: DeclarationFS -> StateT LoaderState Ghc [DeclarationFS]
-getDependencies decl = do
-    knownDecl <- (Map.lookup decl . deps) <$> get
-    case knownDecl of
+getDependencies :: DeclarationFS -> StateT Analysis Ghc [DeclarationFS]
+getDependencies decl =
+    Map.lookup decl <$> getAnalysis callGraph >>= \case
         Just deps -> pure deps
         Nothing -> do
-            moduleDecls <- readModuleDependencies (mkModuleNameFS decl.declModuleName)
-            let deps = fromMaybe [] $ lookup decl moduleDecls
-            modify (\s -> s{deps = Map.insert decl deps s.deps})
+            let modInfo = ModuleFS (mkModuleNameFS decl.declModuleName) (Just decl.declUnitId)
+            moduleDecls <- readModuleDependencies modInfo
+            deps <- case lookup decl moduleDecls of
+                Nothing -> do
+                    addUnknownDecl decl
+                    pure []
+                Just xs -> pure xs
+            addDeclaration decl deps
             pure deps
 
-readModuleDependencies :: ModuleName -> StateT LoaderState Ghc Dependencies
-readModuleDependencies moduleName = StateT \s -> case Map.lookup moduleName s.modules of
-    Just deps -> pure (deps, s)
-    Nothing -> do
-        (genModule, coreBinds) <- getCoreBind moduleName
-        let deps :: Dependencies
-            deps = removeUnique $ getDependenciesFromCoreBinds genModule coreBinds
-        pure (deps, s{modules = Map.insert moduleName deps s.modules})
+readModuleDependencies :: ModuleFS -> StateT Analysis Ghc Dependencies
+readModuleDependencies modInfo = lookupOrLoadModule modInfo do
+    getCoreBind modInfo >>= \case
+        Nothing -> pure Nothing
+        Just (genModule, coreBinds) -> do
+            let deps :: Dependencies
+                deps = removeUnique $ getDependenciesFromCoreBinds genModule coreBinds
+            pure (Just deps)
 
-getCoreBindFromIFace :: HscEnv -> ModIface -> IO [CoreBind]
+getCoreBindFromIFace :: HscEnv -> ModIface -> IO (Maybe [CoreBind])
 getCoreBindFromIFace hscEnv modIface = do
     let ifLclEnv :: IfLclEnv
         ifLclEnv =
@@ -89,37 +84,44 @@ getCoreBindFromIFace hscEnv modIface = do
     case modIface.mi_extra_decls of
         Nothing -> do
             liftIO $ putStrLn $ "Module doesn't have simplified core! (missing -fwrite-if-simplified-core?)"
-            pure []
+            pure Nothing
         Just decls -> do
             typeEnv <- newIORef emptyTypeEnv
             runIOEnv (Env hscEnv 'a' ifGblEnv ifLclEnv) do
                 coreBinds <- tcTopIfaceBindings typeEnv decls
                 liftIO $ putStrLn $ "Converted " <> show (length decls) <> " decl into " <> show (length coreBinds)
-                pure coreBinds
+                pure (Just coreBinds)
 
-getCoreBind :: ModuleName -> Ghc (Module, [CoreBind])
-getCoreBind moduleName = do
-    liftIO $ putStrLn $ "Loading module " <> show moduleName
-    genModule <- lookupModule moduleName Nothing
+getCoreBind :: ModuleFS -> Ghc (Maybe (Module, [CoreBind]))
+getCoreBind modInfo = do
+    try (unsafeGetCore modInfo) >>= \case
+        Left (e :: SomeException) -> do
+            liftIO $ putStrLn $ "Loading error: " <> show e
+            pure Nothing
+        Right n -> pure n
+
+-- | Throw an error when the module if unknown
+unsafeGetCore :: ModuleFS -> Ghc (Maybe (Module, [CoreBind]))
+unsafeGetCore modInfo = do
+    liftIO $ putStrLn $ "Loading module " <> show modInfo
+    genModule <- GHC.lookupModule modInfo.moduleName modInfo.moduleUnit
     getModuleInfo genModule >>= \case
         Nothing -> do
             liftIO $ putStrLn $ "Module doesn't have info!"
-            pure (genModule, [])
-        Just modInfo -> case modInfoIface modInfo of
+            pure Nothing
+        Just mInfo -> case modInfoIface mInfo of
             Nothing -> do
                 liftIO $ putStrLn $ "Module info doesn't have iface!"
-                pure (genModule, [])
+                pure Nothing
             Just modIface -> do
                 hscEnv <- getSession
-                liftIO do
-                    coreBinds <- getCoreBindFromIFace hscEnv modIface
-                    pure (genModule, coreBinds)
+                liftIO $
+                    getCoreBindFromIFace hscEnv modIface >>= \case
+                        Nothing -> pure Nothing
+                        Just coreBinds -> pure (Just (genModule, coreBinds))
 
 main :: IO ()
 main = do
     args <- getArgs
     analysis <- doAnalyze args.rootModules
     checkAnalysis args analysis
-
-showPpr :: SDoc -> String
-showPpr = showSDocOneLine defaultSDocContext

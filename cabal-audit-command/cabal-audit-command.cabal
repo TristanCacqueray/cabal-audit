@@ -37,6 +37,7 @@ library
   import:          common
   hs-source-dirs:  src
   exposed-modules:
+    CabalAudit.Analysis
     CabalAudit.Command
     CabalAudit.GhcPkg
     CabalAudit.LoadUtils
@@ -49,6 +50,7 @@ library
     , ghc
     , optparse-applicative
     , process
+    , transformers
 
 executable cabal-audit
   import:         common
