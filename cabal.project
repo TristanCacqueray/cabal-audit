@@ -1,1 +1,6 @@
-packages: cabal-audit-plugin cabal-audit-command cabal-audit-hi cabal-audit-hie cabal-audit-test
+packages:
+  cabal-audit-plugin
+  cabal-audit-command
+  cabal-audit-hi
+  -- cabal-audit-hie
+  cabal-audit-test

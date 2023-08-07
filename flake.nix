@@ -2,17 +2,31 @@
   nixConfig.bash-prompt = "[nix(cabal-audit)] ";
   inputs = {
     hspkgs.url =
-      "github:podenv/hspkgs/fe0dabfd8acf96f1b5cff55766de6284517868cf";
+      "github:podenv/hspkgs/39f3b89b82ce345f4b1837003a3cc020d041dbe9";
     # "path:///srv/github.com/podenv/hspkgs";
   };
   outputs = { self, hspkgs }:
     let
       pkgs = hspkgs.pkgs;
 
+      # Enable simplified core
+      withHiCore = drv:
+        pkgs.haskell.lib.appendBuildFlags drv
+        [ "--ghc-options=-fwrite-if-simplified-core" ];
+
+      # Call withHix for all package set attributes
+      withAllHiCore = packagesSet:
+        builtins.mapAttrs (name: value:
+          if builtins.elem name [ "mkDerivation" "ghc" ]
+          || !(builtins.isAttrs value) || !(builtins.hasAttr "pname" value) then
+            value
+          else
+            withHiCore value) packagesSet;
+
       pluginDrv = pkgs.haskell.lib.dontHaddock
         (pkgs.hspkgs.callCabal2nix "cabal-audit-plugin" ./cabal-audit-plugin
           { });
-      pluginSoPath = "${pluginDrv}/lib/ghc-9.6.1/lib/libcabal-audit-plugin.so";
+      pluginSoPath = "${pluginDrv}/lib/ghc-9.6.2/lib/libcabal-audit-plugin.so";
       pluginArgs = [
         "-fplugin-trustworthy"
         "-fplugin-library='${pluginSoPath};cabal-audit-plugin;CabalAudit.Plugin;[]'"
@@ -89,8 +103,9 @@
         withAllHie hpPrev // ({
           cabal-audit = hpPrev.callCabal2nix "cabal-audit" self { };
           ghc = hpPrev.ghc.overrideAttrs (prev: {
-            patches = (hpPrev.ghc.patches or [ ])
-              ++ [ ./0001-Enable-hie-file-generation.patch ];
+            patches = (hpPrev.ghc.patches or [ ]) ++ [
+              ./ghc-libraries-patches/0001-Enable-hie-file-generation.patch
+            ];
           });
         });
 
@@ -113,6 +128,25 @@
         withAllHix (hpPrev // (haskellExtendBase hpFinal hpPrev));
       hsPkgsTest = pkgs.hspkgs.extend haskellExtendWithHix;
 
+      haskellExtendWithHiCore = hpFinal: hpPrev:
+        withAllHiCore (hpPrev // (haskellExtendBase hpFinal hpPrev) // {
+          ghc = hpPrev.ghc.overrideAttrs (prev: {
+            buildPhase = ''
+              runHook preBuild
+
+              # hadrianFlagsArray is created in preConfigure
+              newFlags=$(echo $hadrianFlags | sed 's/flavour=release/flavour=release+hi_core/')
+              echo "hadrianFlags: $newFlags ''${hadrianFlagsArray[@]}"
+
+              # We need to go via the bindist for installing
+              hadrian $newFlags "''${hadrianFlagsArray[@]}" binary-dist-dir
+
+              runHook postBuild
+            '';
+          });
+        });
+      hsPkgsHiCore = pkgs.hspkgs.extend haskellExtendWithHiCore;
+
       baseTools = with pkgs; [
         cabal-install
         hsPkgs.cabal-fmt
@@ -123,22 +157,23 @@
 
     in {
       pluginExtend = haskellExtendWithHix;
+      hiCoreExtend = haskellExtendWithHiCore;
       packages."x86_64-linux".default =
         pkgs.haskell.lib.justStaticExecutables hsPkgs.cabal-audit-command;
       packages."x86_64-linux".test = hsPkgsTest.tagged;
       packages."x86_64-linux".plugin = pluginDrv;
       packages."x86_64-linux".ghc = hsPkgs.ghc;
-      devShell."x86_64-linux" = hsPkgs.shellFor {
+      devShell."x86_64-linux" = hsPkgsHiCore.shellFor {
         packages = p: [
           p.cabal-audit-plugin
           p.cabal-audit-command
           p.cabal-audit-hi
-          p.cabal-audit-hie
+          # p.cabal-audit-hie
           p.cabal-audit-test
         ];
         buildInputs = with pkgs; [ ghcid haskell-language-server ] ++ baseTools;
       };
-      devShells."x86_64-linux".test = hsPkgsTest.shellFor {
+      devShells."x86_64-linux".test = hsPkgsHiCore.shellFor {
         packages = p: [ p.cabal-audit-test ];
         buildInputs = with pkgs; [ ghcid haskell-language-server ] ++ baseTools;
       };

@@ -23,6 +23,65 @@ given vulnerability only appears in a rarely used declaration of a popular packa
 
 ## Usage
 
+### Collect the dependencies
+
+The full dependencies call graph is obtained from the `.hi` files that are built with `-fwrite-if-simplified-core`.
+
+#### cabal
+
+Add the following lines to your project's `cabal.project`:
+
+```
+package *
+  ghc-options: -fwrite-if-simplified-core
+```
+
+#### stack
+
+Add the following lines to your project's `stack.yaml`:
+
+```
+apply-ghc-options: everything
+ghc-options:
+  "$everything": -fwrite-if-simplified-core
+```
+
+#### nix
+
+Use the `hiCoreExtend` attribute of the flake to patch all the packages.
+
+### Use the cabal-audit-hi command
+
+- Install the command with: `cabal install cabal-audit-hi`.
+
+- Build your project with `--write-ghc-environment-files=always`.
+
+- Run the command: `cabal-audit-hi YourModuleName`
+
+```ShellSession
+$ cabal-audit-hi --help
+cabal-audit - detects uses of known vulnerabilities
+
+Usage: cabal-audit [--extra-lib-dirs DIR] [--write-graph FILENAME]
+                   [--target DECLARATION] MODULE...
+
+Available options:
+  --extra-lib-dirs DIR     Search module dependencies in DIR (e.g. for ghc
+                           librarires)
+  --write-graph FILENAME   Dump nodes.tsv and edges.tsv files
+  --target DECLARATION     Check if a declaration is reachable
+  -h,--help                Show this help text
+```
+
+Note that you need to list the exposed modules (your roots).
+
+Here is a demo graph rendered with [gephi](https://gephi.org/) through this command: `cabal-audit-hi --write-graph simple CabalAudit.Test.Simple`.
+
+
+## Legacy Plugin Usage
+
+Here was the previous instruction using the ghc Plugin
+
 ### Build the cabal-audit-plugin
 
 Run the following command to get the plugin location (pluginSoPath):
@@ -89,27 +148,7 @@ Use the following nix flake setup:
 
 ### Use the cabal-audit command
 
-Analyze your build with the following command:
-
-```
-$ cabal run cabal-audit-command -- --help
-cabal-audit - detects uses of known vulnerabilities
-
-Usage: cabal-audit [--extra-lib-dirs DIR] [--write-graph FILENAME]
-                   [--target DECLARATION] MODULE...
-
-Available options:
-  --extra-lib-dirs DIR     Search module dependencies in DIR (e.g. for ghc
-                           librarires)
-  --write-graph FILENAME   Dump nodes.tsv and edges.tsv files
-  --target DECLARATION     Check if a declaration is reachable
-  -h,--help                Show this help text
-```
-
-Note that you need to list the exposed modules (your roots). The command generates a edges.tsv file that can be visualized with gephi.
-For example, the CabalAudit.Test.External module looks like this:
-
-![cabal-audit](https://github.com/TristanCacqueray/cabal-audit/assets/154392/fc7d42b0-4b32-447b-aa00-6fc2254d5a43)
+Analyze your build with the `cabal-audit-command`.
 
 
 ## Demo

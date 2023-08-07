@@ -35,7 +35,9 @@ common common
 library
   import:          common
   hs-source-dirs:  src
-  exposed-modules: CabalAuditIface
+  exposed-modules:
+      CabalAuditIface
+      GhcExtras
   build-depends:
     , binary
     , cabal-audit-command
