@@ -72,9 +72,17 @@ Available options:
 
 Note that you need to list the exposed modules (your roots).
 
-Here is a demo graph rendered with [gephi](https://gephi.org/) through this command: `cabal-audit-hi --write-graph simple CabalAudit.Test.Simple`.
+## Analyze with [gephi](https://gephi.org/)
 
-![cabal-audit-hi-simple](https://github.com/TristanCacqueray/cabal-audit/assets/154392/f87126ce-1514-46f0-ab2d-056a7021c270)
+Load the files generated using the `--write-graph` argument in gephi like this:
+
+- Click `File` then `Import spreadsheet...`.
+- Load both files at once with the default options.
+- At the end of wizard, click `Merge into a new workspace`.
+- In the layout pannel, select the `OpenOrd` then click `Run`.
+- In the preview mode, change color to taste and click `Refresh`
+
+Here is a demo graph of the `CabalAuditHie` module (22k nodes, 70k edges):
 
 
 ## Legacy Plugin Usage
