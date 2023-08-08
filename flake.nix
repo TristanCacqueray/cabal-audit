@@ -110,6 +110,8 @@
         });
 
       haskellExtendBase = hpFinal: hpPrev: {
+        cabal-audit-core =
+          hpPrev.callCabal2nix "cabal-audit-core" ./cabal-audit-core { };
         cabal-audit-command =
           hpPrev.callCabal2nix "cabal-audit-command" ./cabal-audit-command { };
         cabal-audit-plugin =
@@ -165,10 +167,11 @@
       packages."x86_64-linux".ghc = hsPkgs.ghc;
       devShell."x86_64-linux" = hsPkgsHiCore.shellFor {
         packages = p: [
+          p.cabal-audit-core
           p.cabal-audit-plugin
           p.cabal-audit-command
           p.cabal-audit-hi
-          # p.cabal-audit-hie
+          p.cabal-audit-hie
           p.cabal-audit-test
         ];
         buildInputs = with pkgs; [ ghcid haskell-language-server ] ++ baseTools;

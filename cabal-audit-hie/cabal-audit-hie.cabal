@@ -50,3 +50,10 @@ library
     , ghc
     , lens
     , transformers
+
+executable cabal-audit-hie
+  import:         common
+  hs-source-dirs: app
+  main-is:        Main.hs
+  ghc-options:    -threaded -rtsopts -with-rtsopts=-T
+  build-depends:  cabal-audit-hie

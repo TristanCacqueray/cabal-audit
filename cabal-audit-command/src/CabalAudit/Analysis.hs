@@ -6,16 +6,21 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
-import GHC.Data.FastString (FastString, unpackFS)
+import GHC.Data.FastString (FastString, NonDetFastString (..), unpackFS)
 import GHC.Unit.Module (ModuleName, moduleNameString)
 
-import CabalAudit.Plugin
+import CabalAudit.Core
 
 data ModuleFS = ModuleFS
     { moduleName :: ModuleName
     , moduleUnit :: Maybe FastString
     }
-    deriving (Ord, Eq)
+    deriving (Eq)
+
+instance Ord ModuleFS where
+    compare m1 m2 =
+        compare m1.moduleName m2.moduleName
+            <> compare (NonDetFastString <$> m1.moduleUnit) (NonDetFastString <$> m2.moduleUnit)
 
 instance Show ModuleFS where
     show mi = miUnit <> moduleNameString mi.moduleName

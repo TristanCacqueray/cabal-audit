@@ -1,8 +1,8 @@
 cabal-version: 3.0
-name:          cabal-audit-command
+name:          cabal-audit-core
 version:       0.1
-synopsis:      Detects uses of known vulnerabilities
-description:   This packages provides the cabal-audit command.
+synopsis:      The cabal-audit core library to process Core
+description:   The cabal-audit core library to process Core.
 category:      Development
 author:        Tristan Cacqueray
 maintainer:    tdecacqu@redhat.com
@@ -30,32 +30,16 @@ common common
     OverloadedRecordDot
     OverloadedStrings
     PartialTypeSignatures
-    QuasiQuotes
     StrictData
+
+  build-depends:
+    , base        <5
+    , binary
+    , containers
+    , ghc
+
+  hs-source-dirs:     src
 
 library
   import:          common
-  hs-source-dirs:  src
-  exposed-modules:
-    CabalAudit.Analysis
-    CabalAudit.Command
-    CabalAudit.GhcPkg
-    CabalAudit.LoadUtils
-
-  build-depends:
-    , binary
-    , bytestring
-    , cabal-audit-core
-    , containers
-    , filepath
-    , ghc
-    , optparse-applicative
-    , process
-    , transformers
-
-executable cabal-audit
-  import:         common
-  hs-source-dirs: app
-  main-is:        Main.hs
-  ghc-options:    -threaded -rtsopts -with-rtsopts=-T
-  build-depends:  cabal-audit-command
+  exposed-modules: CabalAudit.Core

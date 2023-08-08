@@ -2,23 +2,24 @@ module CabalAudit.Command where
 
 import Control.Monad (forM_, unless)
 import Control.Monad.IO.Class
+import Data.Binary qualified as Binary
 import Data.Foldable (traverse_)
 import Data.List (dropWhileEnd, group, intercalate)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
-import GHC.Data.FastString (FastString, mkFastString, unpackFS)
+import Data.Tree (Tree)
+import Data.Tree qualified as Tree
+import GHC.Data.FastString (NonDetFastString (..), mkFastString, unpackFS)
 import GHC.Unit.Module (ModuleName, mkModuleName, mkModuleNameFS)
 import System.OsPath (OsPath, osp)
 import System.OsPath qualified as OSP
-import Data.Tree (Tree)
-import Data.Tree qualified as Tree
 
 import CabalAudit.Analysis
+import CabalAudit.Core
 import CabalAudit.GhcPkg
 import CabalAudit.LoadUtils
-import CabalAudit.Plugin
 
 import Control.Monad.Trans.State.Strict (StateT)
 import Data.Maybe (listToMaybe)
@@ -36,11 +37,11 @@ import System.IO (IOMode (..), hPutStrLn, stderr, withFile)
 removeUnique :: Dependencies -> Dependencies
 removeUnique deps = map removeTopDecl deps
   where
-    dupDecls :: Set FastString
-    dupDecls = Set.fromList $ map head $ filter (\g -> length g > 1) $ group $ map (declOccName . fst) deps
+    dupDecls :: Set NonDetFastString
+    dupDecls = Set.fromList $ map head $ filter (\g -> length g > 1) $ group $ map (NonDetFastString . declOccName . fst) deps
     removeDeclUnique :: DeclarationFS -> DeclarationFS
     removeDeclUnique decl
-        | decl.declOccName `Set.member` dupDecls = decl
+        | NonDetFastString decl.declOccName `Set.member` dupDecls = decl
         | otherwise = decl{declUnique = 0}
     removeTopDecl :: (DeclarationFS, [DeclarationFS]) -> (DeclarationFS, [DeclarationFS])
     removeTopDecl (decl, declDeps) = (removeDeclUnique decl, map removeDeclUnique declDeps)
@@ -53,7 +54,7 @@ collectDependencies rootPaths rootModules = runAnalysis do
         readModuleDependencies moduleName = do
             let moduleInfo = ModuleFS moduleName Nothing -- .hix doesn't contain the unitId
             lookupOrLoadModule moduleInfo $ case Map.lookup moduleName allModules of
-                Just fp -> Just <$> (readDependencies =<< OSP.decodeFS fp)
+                Just fp -> Just <$> (Binary.decodeFile =<< OSP.decodeFS fp)
                 Nothing -> pure Nothing
 
     -- Logic to find dependencies
@@ -100,7 +101,7 @@ checkTarget callGraph targets = forM_ targets \target -> do
     getPath root = Tree.Node root (getChilds [] $ maybe mempty Set.toList (Map.lookup root inverseGraph))
       where
         getChilds acc [] = acc
-        getChilds acc (cur:rest) = getChilds (getPath cur : acc) rest
+        getChilds acc (cur : rest) = getChilds (getPath cur : acc) rest
 
     inverseGraph :: Map DeclarationFS (Set DeclarationFS)
     inverseGraph = Map.fromListWith Set.union $ concatMap toInverse callGraph
@@ -108,8 +109,7 @@ checkTarget callGraph targets = forM_ targets \target -> do
     toInverse (source, targets') = go [] targets'
       where
         go acc [] = acc
-        go acc (target:rest) = go ((target, Set.singleton source) : acc) rest
-
+        go acc (target : rest) = go ((target, Set.singleton source) : acc) rest
 
 data CabalAuditUsage = CabalAuditUsage
     { extraLibDirs :: [OsPath]

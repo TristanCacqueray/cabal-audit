@@ -68,11 +68,11 @@ printExternalNames analysis = evalStateT go mempty
     go = traverse_ goRoot analysis.roots
 
     goRoot :: TopLevelDeclaration -> StateT (Set Declaration) IO ()
-    goRoot decl = do
+    goRoot (TopLevelDeclaration decl) = do
         let reachables :: [Declaration]
-            reachables = Graph.reachable (coerce decl) analysis.dependencyGraph
+            reachables = Graph.reachable analysis.dependencyGraph decl
         known <- get
-        case filter (`notElem` known) (filter (/= coerce decl) reachables) of
+        case filter (`notElem` known) (filter (/= decl) reachables) of
             [] -> lift $ putStrLn (show decl <> " does not have any dependencies")
             decls -> do
                 lift $ putStr (show decl <> ": ")

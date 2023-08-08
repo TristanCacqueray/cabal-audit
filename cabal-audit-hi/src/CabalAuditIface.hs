@@ -7,7 +7,7 @@ import Data.Map qualified as Map
 
 import CabalAudit.Analysis
 import CabalAudit.Command
-import CabalAudit.Plugin (DeclarationFS (..), Dependencies, getDependenciesFromCoreBinds)
+import CabalAudit.Core (DeclarationFS (..), Dependencies, getDependenciesFromCoreBinds)
 import GhcExtras
 
 doAnalyze :: [ModuleName] -> IO Analysis

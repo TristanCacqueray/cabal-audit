@@ -35,8 +35,9 @@ common common
     StrictData
 
   build-depends:
-    , base        <5
+    , base              <5
     , binary
+    , cabal-audit-core
     , containers
     , ghc
 
