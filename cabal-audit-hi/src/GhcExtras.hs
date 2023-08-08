@@ -66,7 +66,7 @@ getCoreBind moduleName mPkgId = do
 -- | The 'getCoreBind' implementation, but throwing an exception from 'GHC.lookupModule'.
 unsafeGetCore :: ModuleName -> Maybe FastString -> Ghc (Maybe (Module, [CoreBind]))
 unsafeGetCore moduleName mPkgId = do
-    liftIO $ putStrLn $ "Loading module " <> show (fromMaybe "" mPkgId) <> ":" <> show mPkgId
+    liftIO $ putStrLn $ "Loading module " <> show (fromMaybe "" mPkgId) <> ":" <> show moduleName
     genModule <- GHC.lookupModule moduleName mPkgId
     getModuleInfo genModule >>= \case
         Nothing -> do

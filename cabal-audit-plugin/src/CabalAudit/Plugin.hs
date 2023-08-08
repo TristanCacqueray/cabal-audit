@@ -42,7 +42,7 @@ data DeclarationFS = DeclarationFS
 -- | Dependencies (aka the call graph)
 type Dependencies = [(DeclarationFS, [DeclarationFS])]
 
--- | reduceDependencies removes empty lists and merge multiple keys
+-- | reduceDependencies tidy up the output a bit.
 reduceDependencies :: Dependencies -> Dependencies
 reduceDependencies = combine . filter isValuable
   where
@@ -50,10 +50,10 @@ reduceDependencies = combine . filter isValuable
     combine = map fromSet . Map.toList . Map.fromListWith (Set.union) . map toSet
     fromSet (k, v) = (k, Set.toList v)
     toSet (k, v) = (k, Set.fromList v)
-    isValuable (_, []) = False
     isValuable (decl, _) =
         -- Ignore useless vars
         decl.declOccName `notElem` ["$krep"] && not (isTypeDecl decl.declOccName)
+    -- var that starts with '$tc' and '$tr' doesn't seem relevant
     isTypeDecl fs0 = isJust do
         (c1, fs1) <- unconsFS fs0
         (c2, fs2) <- unconsFS fs1

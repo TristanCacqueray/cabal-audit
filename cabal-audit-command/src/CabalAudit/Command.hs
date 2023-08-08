@@ -4,6 +4,7 @@ import Control.Monad (forM_, unless)
 import Control.Monad.IO.Class
 import Data.Foldable (traverse_)
 import Data.List (dropWhileEnd, group, intercalate)
+import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -11,6 +12,8 @@ import GHC.Data.FastString (FastString, mkFastString, unpackFS)
 import GHC.Unit.Module (ModuleName, mkModuleName, mkModuleNameFS)
 import System.OsPath (OsPath, osp)
 import System.OsPath qualified as OSP
+import Data.Tree (Tree)
+import Data.Tree qualified as Tree
 
 import CabalAudit.Analysis
 import CabalAudit.GhcPkg
@@ -90,9 +93,23 @@ findTarget callGraph target = findDecl callGraph
 checkTarget :: Dependencies -> [String] -> IO ()
 checkTarget callGraph targets = forM_ targets \target -> do
     case findTarget callGraph target of
-        Just decl -> do
-            hPutStrLn stderr $ show decl <> ": call by TODO"
+        Just decl -> hPutStrLn stderr $ Tree.drawTree (show <$> getPath decl)
         Nothing -> hPutStrLn stderr $ target <> ": couldn't find in the dependencies " <> show (length callGraph)
+  where
+    getPath :: DeclarationFS -> Tree DeclarationFS
+    getPath root = Tree.Node root (getChilds [] $ maybe mempty Set.toList (Map.lookup root inverseGraph))
+      where
+        getChilds acc [] = acc
+        getChilds acc (cur:rest) = getChilds (getPath cur : acc) rest
+
+    inverseGraph :: Map DeclarationFS (Set DeclarationFS)
+    inverseGraph = Map.fromListWith Set.union $ concatMap toInverse callGraph
+    toInverse :: (DeclarationFS, [DeclarationFS]) -> [(DeclarationFS, Set DeclarationFS)]
+    toInverse (source, targets') = go [] targets'
+      where
+        go acc [] = acc
+        go acc (target:rest) = go ((target, Set.singleton source) : acc) rest
+
 
 data CabalAuditUsage = CabalAuditUsage
     { extraLibDirs :: [OsPath]

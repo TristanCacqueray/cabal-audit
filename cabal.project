@@ -4,3 +4,6 @@ packages:
   cabal-audit-hi
   -- cabal-audit-hie
   cabal-audit-test
+
+package *
+  ghc-options: -fwrite-if-simplified-core
