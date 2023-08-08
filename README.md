@@ -84,6 +84,7 @@ Load the files generated using the `--write-graph` argument in gephi like this:
 
 Here is a demo graph of the `CabalAuditHie` module (22k nodes, 70k edges):
 
+![cabal-audit-hie](https://github.com/TristanCacqueray/cabal-audit/assets/154392/48874d11-673c-49b0-950c-7e16829aa0b9)
 
 ## Legacy Plugin Usage
 
