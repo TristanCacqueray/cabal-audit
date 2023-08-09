@@ -4,14 +4,14 @@ import Control.Monad (forM_, unless)
 import Control.Monad.IO.Class
 import Data.Binary qualified as Binary
 import Data.Foldable (traverse_)
-import Data.List (dropWhileEnd, group, intercalate)
+import Data.List (dropWhileEnd, intercalate)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Tree (Tree)
 import Data.Tree qualified as Tree
-import GHC.Data.FastString (NonDetFastString (..), mkFastString, unpackFS)
+import GHC.Data.FastString (mkFastString, unpackFS)
 import GHC.Unit.Module (ModuleName, mkModuleName, mkModuleNameFS)
 import System.OsPath (OsPath, osp)
 import System.OsPath qualified as OSP
@@ -25,26 +25,6 @@ import Control.Monad.Trans.State.Strict (StateT)
 import Data.Maybe (listToMaybe)
 import Options.Applicative
 import System.IO (IOMode (..), hPutStrLn, stderr, withFile)
-
-{- | This functions keeps the unique attribute only for duplicate top level declaration.
- This is necessary because Unique are not stable accross module.
- The assumptions is that:
- 1. only type class instance (starting with $c) needs unique (their toplevel name appears dupplicated otherwise).
- 2. These $c variables are not used directly, external users reference the '$f' variant instead.
- Therefor it should be safe to remove the Unique for non duplicated declaration.
- However this seems like a hack to get the relevant type class instance declaration.
--}
-removeUnique :: Dependencies -> Dependencies
-removeUnique deps = map removeTopDecl deps
-  where
-    dupDecls :: Set NonDetFastString
-    dupDecls = Set.fromList $ map head $ filter (\g -> length g > 1) $ group $ map (NonDetFastString . declOccName . fst) deps
-    removeDeclUnique :: DeclarationFS -> DeclarationFS
-    removeDeclUnique decl
-        | NonDetFastString decl.declOccName `Set.member` dupDecls = decl
-        | otherwise = decl{declUnique = 0}
-    removeTopDecl :: (DeclarationFS, [DeclarationFS]) -> (DeclarationFS, [DeclarationFS])
-    removeTopDecl (decl, declDeps) = (removeDeclUnique decl, map removeDeclUnique declDeps)
 
 collectDependencies :: [OsPath] -> [ModuleName] -> IO Analysis
 collectDependencies rootPaths rootModules = runAnalysis do

@@ -41,7 +41,7 @@ readModuleDependencies modInfo = lookupOrLoadModule modInfo do
         Nothing -> pure Nothing
         Just (genModule, coreBinds) -> do
             let deps :: Dependencies
-                deps = removeUnique $ getDependenciesFromCoreBinds genModule coreBinds
+                deps = getDependenciesFromCoreBinds genModule coreBinds
             pure (Just deps)
 
 main :: IO ()

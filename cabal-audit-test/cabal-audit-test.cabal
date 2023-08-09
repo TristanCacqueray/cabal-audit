@@ -43,6 +43,7 @@ library
   exposed-modules:
     CabalAudit.Test.Class
     CabalAudit.Test.External
+    CabalAudit.Test.Inline
     CabalAudit.Test.Instance
     CabalAudit.Test.Simple
     CabalAudit.Test.User

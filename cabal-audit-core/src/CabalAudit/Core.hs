@@ -13,8 +13,7 @@ import GHC.Core (Alt (..), Bind (..), CoreBind, Expr (..))
 import GHC.Core.Type (Var)
 import GHC.Data.FastString (FastString, NonDetFastString (..), fastStringToShortByteString, mkFastStringShortByteString, unconsFS)
 import GHC.Generics (Generic)
-import GHC.Types.Name (Name, OccName (occNameFS), nameModule_maybe, nameOccName, nameUnique)
-import GHC.Types.Unique (getKey)
+import GHC.Types.Name (Name, OccName (occNameFS), nameModule_maybe, nameOccName)
 import GHC.Types.Var (varName)
 import GHC.Unit (moduleNameFS)
 import GHC.Unit.Module (Module, moduleUnitId)
@@ -25,12 +24,8 @@ data DeclarationFS = DeclarationFS
     { declModuleName :: FastString
     , declUnitId :: FastString
     , declOccName :: FastString
-    , declUnique :: Int -- current solution to differentiate class instance
     }
-    deriving (Eq, Generic)
-
--- Q: How to tell two class instance appart?
--- A: Use the var name Unique?
+    deriving (Eq)
 
 -- | Dependencies (aka the call graph)
 type Dependencies = [(DeclarationFS, [DeclarationFS])]
@@ -45,9 +40,9 @@ reduceDependencies = combine . filter isValuable
     toSet (k, v) = (k, Set.fromList v)
     isValuable (decl, _) =
         -- Ignore useless vars
-        decl.declOccName `notElem` ["$krep"] && not (isTypeDecl decl.declOccName)
+        decl.declOccName `notElem` ["$krep"] && not (isNameIgnored decl.declOccName)
     -- var that starts with '$tc' and '$tr' doesn't seem relevant
-    isTypeDecl fs0 = isJust do
+    isNameIgnored fs0 = isJust do
         (c1, fs1) <- unconsFS fs0
         (c2, fs2) <- unconsFS fs1
         (c3, _) <- unconsFS fs2
@@ -126,32 +121,27 @@ mkGlobalDecl name = do
 
 -- | Create a node for the call graph.
 mkDecl :: Module -> Name -> DeclarationFS
-mkDecl genModule name = DeclarationFS{declUnitId, declModuleName, declOccName, declUnique}
+mkDecl genModule name = DeclarationFS{declUnitId, declModuleName, declOccName}
   where
     declUnitId = unitIdFS (moduleUnitId genModule)
     declModuleName = moduleNameFS (moduleName genModule)
     declOccName = occNameFS (nameOccName name)
-    declUnique = getKey (nameUnique name)
 
 instance Outputable DeclarationFS where
     ppr decl =
-        let uniqStr = case decl.declUnique of
-                0 -> ""
-                n -> hcat ["_", ppr n]
-         in hcat [ppr decl.declUnitId, ":", ppr decl.declModuleName, ".", ppr decl.declOccName, uniqStr]
+        hcat [ppr decl.declUnitId, ":", ppr decl.declModuleName, ".", ppr decl.declOccName]
 
 instance Show DeclarationFS where
     show = showSDocOneLine defaultSDocContext . ppr
 
 instance Binary.Binary DeclarationFS where
-    put (DeclarationFS declModuleName declUnitId declOccName declUnique) = do
+    put (DeclarationFS declModuleName declUnitId declOccName) = do
         putFS declModuleName
         putFS declUnitId
         putFS declOccName
-        Binary.put declUnique
       where
         putFS = Binary.put . fastStringToShortByteString
-    get = DeclarationFS <$> getFS <*> getFS <*> getFS <*> Binary.get
+    get = DeclarationFS <$> getFS <*> getFS <*> getFS
       where
         getFS = mkFastStringShortByteString <$> Binary.get
 
@@ -160,6 +150,5 @@ instance Ord DeclarationFS where
         fscomp d1.declModuleName d2.declModuleName
             <> fscomp d1.declUnitId d2.declUnitId
             <> fscomp d1.declOccName d2.declOccName
-            <> compare d1.declUnique d2.declUnique
       where
         fscomp f1 f2 = compare (NonDetFastString f1) (NonDetFastString f2)
