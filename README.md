@@ -4,17 +4,39 @@ cabal-audit is a command line tool to list the external declarations used in a g
 The goal is to inspect the build dependencies with the
 [security-advisories](https://github.com/haskell/security-advisories).
 
+This project differs from the other [cabal-audit](https://github.com/mangoiv/cabal-audit) by using the
+program call graph instead of the install plan in order to avoid false positives.
+For example, [HSEC-2023-007](https://haskell.github.io/security-advisories/advisory/HSEC-2023-0007.html) may not be an issue
+if the affected declaration is not used (even through a transitive dependency).
+
+## Status
+
+As of August 2023, the project is not yet completed, here is a summary of what was attempted:
+
+- Collect dependencies with `HieAST` using `.hie` files, unfortunately this does not contain the typeclass instance resolution for typeclass method.
+- Collect dependencies with `HsDecl` using a renamer plugin, as suggested by hsyl on ghc-devs ([thread](https://mail.haskell.org/pipermail/ghc-devs/2023-August/021351.html)), though this is also does not contain the typeclass instance resolution.
+- Collect dependencies with `CoreBind` using a plugin core pass or through `.hi` files.
+
+Using `CoreBind` looked the most promising because it provides the call graph after typeclass resolution (and rewrite rules), unfortunately, inlined declarations are no longer visible,
+resulting in an inaccurate call graph that could yield false negatives.
+Can GHC somehow attach a provenance information when it inlines declarations?
+
+Assuming this strategy is possible, here is what is left to do:
+
+- Ensure the end user can collect the whole call graph without rebuilding libraries, for example, by always enabling `-fwrite-if-simplified-core`.
+- Precisely describe which declarations are affected in HSEC advisories.
+
 
 ## Overview and scope
 
 This project is composed of a few packages:
 
-- [cabal-audit-plugin](./cabal-audit-plugin): collect dependencies using a plugin.
+- [cabal-audit-hi](./cabal-audit-hi): collect dependencies through `.hi` files built with `-fwrite-if-simplified-core`
 - [cabal-audit-command](./cabal-audit-command): process the collected dependencies.
 - [cabal-audit-test](./cabal-audit-test): a bunch of modules for testing.
 
+- [cabal-audit-plugin](./cabal-audit-plugin): an investigation to collect dependencies using a plugin core pass.
 - [cabal-audit-hie](./cabal-audit-hie): an investigation to collect dependencies through `.hie` files.
-- [cabal-audit-hi](./cabal-audit-hi): an investigation to collect dependencies through `.hi` files built with `-fwrite-if-simplified-core`
 
 The scope of this project is to alert the user when a vulnerable function is being used.
 Searching for individual function is particularly important to avoid false alarm when a
